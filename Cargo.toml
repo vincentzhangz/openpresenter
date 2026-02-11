@@ -1,0 +1,30 @@
+[package]
+name = "openpresenter"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["ndi-sdk"]
+ndi-sdk = []
+
+[dependencies]
+anyhow = "1.0.101"
+async-trait = "0.1.89"
+chrono = { version = "0.4.43", features = ["serde"] }
+dirs = "6.0.0"
+ffmpeg-next = "8.0.0"
+futures = "0.3.31"
+glyphon = "0.10.0"
+iced = { version = "0.14.0", features = ["tokio", "wgpu"] }
+image = "0.25.9"
+pollster = "0.4"
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.49", features = ["full"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
+wgpu = "28.0.0"
+
+[build-dependencies]
+bindgen = "0.72.1"
