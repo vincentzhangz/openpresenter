@@ -20,6 +20,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CACHE_VERSION: v2
 
 jobs:
   # ── Format ────────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ jobs:
 
       - name: Install system dependencies (macOS)
         run: |
-          brew install ffmpeg pkg-config
+          brew install ffmpeg
           echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
 
@@ -64,10 +65,10 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-clippy-
-            ${{ runner.os }}-cargo-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-clippy-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-
 
       - name: Clippy (warnings-as-errors, no NDI SDK)
         run: cargo clippy --no-default-features -- -D warnings
@@ -85,7 +86,7 @@ jobs:
 
       - name: Install system dependencies (macOS)
         run: |
-          brew install ffmpeg pkg-config
+          brew install ffmpeg
           echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
 
@@ -97,10 +98,10 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-test-
-            ${{ runner.os }}-cargo-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-test-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-
 
       - name: Run tests (no NDI SDK)
         run: cargo test --no-default-features
@@ -122,7 +123,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             pkg-config \
-            libavcodec-dev libavformat-dev libavutil-dev \
+            libavcodec-dev libavdevice-dev libavfilter-dev \
+            libavformat-dev libavutil-dev \
             libswscale-dev libswresample-dev \
             libclang-dev \
             libasound2-dev
@@ -135,10 +137,10 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-
-            ${{ runner.os }}-cargo-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-build-
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-
 
       - name: Cargo check (no NDI SDK)
         run: cargo check --no-default-features
