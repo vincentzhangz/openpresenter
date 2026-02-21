@@ -1,5 +1,8 @@
 use crate::ui::messages::Message;
-use iced::{Alignment, Color, Element, Length, widget::{Space, container, row, text}};
+use iced::{
+    Alignment, Color, Element, Length,
+    widget::{Space, container, row, text},
+};
 
 /// Colour palette used to visually distinguish slide group labels.
 pub const GROUP_COLORS: [(u8, u8, u8); 8] = [
@@ -17,9 +20,9 @@ pub const GROUP_COLORS: [(u8, u8, u8); 8] = [
 ///
 /// The same label always produces the same colour across all panels.
 pub fn group_color(label: &str) -> Color {
-    let hash: usize = label
-        .bytes()
-        .fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+    let hash: usize = label.bytes().fold(0usize, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(b as usize)
+    });
     let (r, g, b) = GROUP_COLORS[hash % GROUP_COLORS.len()];
     Color::from_rgb8(r, g, b)
 }
@@ -43,9 +46,13 @@ pub fn group_label_widget<'a>(label: &str) -> Element<'a, Message> {
     });
 
     container(
-        row![dot, Space::new().width(6), text(label_upper).size(10).color(accent)]
-            .align_y(Alignment::Center)
-            .padding([5, 8]),
+        row![
+            dot,
+            Space::new().width(6),
+            text(label_upper).size(10).color(accent)
+        ]
+        .align_y(Alignment::Center)
+        .padding([5, 8]),
     )
     .width(Length::Fill)
     .style(move |_: &iced::Theme| iced::widget::container::Style {

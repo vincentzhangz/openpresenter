@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, Length, widget::{button, container, row, text}};
+use iced::{
+    Alignment, Element, Length,
+    widget::{button, container, row, text},
+};
 
 /// Full-width ghost button with a leading `+` accent and a top-border separator.
 ///

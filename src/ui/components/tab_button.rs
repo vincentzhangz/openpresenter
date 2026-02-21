@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Element, Length, widget::{Row, button, container, text}};
+use iced::{
+    Element, Length,
+    widget::{Row, button, container, text},
+};
 
 pub fn tab_btn<'a>(label: &'a str, active: bool, on_press: Message) -> Element<'a, Message> {
     button(text(label).size(11))

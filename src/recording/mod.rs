@@ -19,15 +19,13 @@ enum EncoderMsg {
     Finish,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecordingState {
     #[default]
     Idle,
     Recording,
     Finishing,
 }
-
 
 pub struct RecordingSession {
     sender: mpsc::SyncSender<EncoderMsg>,
@@ -192,39 +190,34 @@ fn encoder_thread_body(
     let mut pts: i64 = 0;
     let mut frames_encoded: u64 = 0;
 
-    loop {
-        match rx.recv() {
-            Ok(EncoderMsg::Frame(raw)) => {
-                let mut bgra_frame = ffmpeg::frame::Video::new(Pixel::BGRA, width, height);
-                {
-                    let dst = bgra_frame.data_mut(0);
-                    let src = &raw.data;
-                    let copy_len = dst.len().min(src.len());
-                    dst[..copy_len].copy_from_slice(&src[..copy_len]);
-                }
-
-                let mut yuv_frame = ffmpeg::frame::Video::empty();
-                scaler
-                    .run(&bgra_frame, &mut yuv_frame)
-                    .map_err(|e| anyhow!("scaler.run: {e}"))?;
-                yuv_frame.set_pts(Some(pts));
-                pts += 1;
-
-                encoder
-                    .send_frame(&yuv_frame)
-                    .map_err(|e| anyhow!("send_frame: {e}"))?;
-                drain_encoder(
-                    &mut encoder,
-                    &mut octx,
-                    ost_index,
-                    codec_time_base,
-                    stream_time_base,
-                )?;
-
-                frames_encoded += 1;
-            }
-            Ok(EncoderMsg::Finish) | Err(_) => break,
+    while let Ok(EncoderMsg::Frame(raw)) = rx.recv() {
+        let mut bgra_frame = ffmpeg::frame::Video::new(Pixel::BGRA, width, height);
+        {
+            let dst = bgra_frame.data_mut(0);
+            let src = &raw.data;
+            let copy_len = dst.len().min(src.len());
+            dst[..copy_len].copy_from_slice(&src[..copy_len]);
         }
+
+        let mut yuv_frame = ffmpeg::frame::Video::empty();
+        scaler
+            .run(&bgra_frame, &mut yuv_frame)
+            .map_err(|e| anyhow!("scaler.run: {e}"))?;
+        yuv_frame.set_pts(Some(pts));
+        pts += 1;
+
+        encoder
+            .send_frame(&yuv_frame)
+            .map_err(|e| anyhow!("send_frame: {e}"))?;
+        drain_encoder(
+            &mut encoder,
+            &mut octx,
+            ost_index,
+            codec_time_base,
+            stream_time_base,
+        )?;
+
+        frames_encoded += 1;
     }
 
     encoder.send_eof().map_err(|e| anyhow!("send_eof: {e}"))?;

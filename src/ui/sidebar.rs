@@ -78,9 +78,7 @@ pub fn sidebar<'a>(
     let mut list = Column::new().spacing(2).padding([4u16, 8u16]);
 
     if presentations.is_empty() {
-        list = list.push(
-                crate::ui::components::empty_state("No presentations"),
-            );
+        list = list.push(crate::ui::components::empty_state("No presentations"));
     } else {
         let query_lower = search_query.to_lowercase();
         for pres in presentations {
@@ -153,6 +151,3 @@ fn presentation_item<'a>(pres: &'a Presentation, active: bool) -> Element<'a, Me
         })
         .into()
 }
-
-
-

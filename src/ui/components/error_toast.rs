@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, Length, widget::{button, container, row, text}};
+use iced::{
+    Alignment, Element, Length,
+    widget::{button, container, row, text},
+};
 
 /// Dismissible full-width error banner rendered above all other UI layers.
 ///
@@ -23,7 +26,9 @@ pub fn error_toast<'a>(message: &'a str, on_dismiss: Message) -> Element<'a, Mes
     )
     .width(Length::Fill)
     .style(|_t: &iced::Theme| iced::widget::container::Style {
-        background: Some(iced::Background::Color(iced::Color::from_rgb(0.7, 0.15, 0.1))),
+        background: Some(iced::Background::Color(iced::Color::from_rgb(
+            0.7, 0.15, 0.1,
+        ))),
         ..Default::default()
     })
     .into()

@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, widget::{Space, button, row, text}};
+use iced::{
+    Alignment, Element,
+    widget::{Space, button, row, text},
+};
 
 /// Data required to render a [`reorder_toolbar`] for a single list item.
 pub struct ReorderControls {

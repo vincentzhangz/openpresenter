@@ -2,13 +2,13 @@ use crate::slides::{BibleTranslation, BibleVerse};
 use crate::ui::components::{divider, section_header, tab_bar, tab_btn};
 use crate::ui::messages::{Message, SidebarTab};
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Element, Length,
     widget::{
         Column, Row, Space, button, checkbox, column, container, row, scrollable, text, text_input,
     },
 };
+use iced_font_awesome::fa_icon_solid;
 
 #[allow(clippy::too_many_arguments)]
 pub fn bible_panel<'a>(
@@ -305,9 +305,9 @@ fn verse_browser<'a>(
         ]
         .align_y(Alignment::Center),
     )
-        .on_press(Message::BibleSendToPresentation)
-        .padding([8u16, 14u16])
-        .style(theme::primary_button);
+    .on_press(Message::BibleSendToPresentation)
+    .padding([8u16, 14u16])
+    .style(theme::primary_button);
 
     let action_bar = container(
         row![

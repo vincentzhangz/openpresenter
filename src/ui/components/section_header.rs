@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, Length, widget::{Space, container, row, text}};
+use iced::{
+    Alignment, Element, Length,
+    widget::{Space, container, row, text},
+};
 
 /// Compact 10 px muted inline label. Use between property rows in inspector panels.
 pub fn section_label<'a>(label: &'a str) -> Element<'a, Message> {

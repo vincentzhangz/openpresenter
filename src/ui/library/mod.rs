@@ -2,11 +2,11 @@ use crate::slides::LibraryAsset;
 use crate::ui::components::{add_button, search_input, section_header, truncate};
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Background, Border, Color, Element, Length,
     widget::{Column, Space, button, column, container, row, scrollable, text},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub const LIBRARY_PANEL_WIDTH: u16 = 240;
 

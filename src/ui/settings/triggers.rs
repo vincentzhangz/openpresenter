@@ -1,10 +1,10 @@
 use crate::triggers::automation::Macro;
 use crate::ui::messages::Message;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Element, Length,
     widget::{Space, button, column, row, text, text_input, toggler},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub fn triggers_panel<'a>(
     http_running: bool,
@@ -88,7 +88,8 @@ pub fn triggers_panel<'a>(
                     loop_toggle,
                     text("loop").size(11.0),
                     run_btn,
-                    button(fa_icon_solid("xmark").size(13.0)).on_press(Message::MacroRemove(m.id.clone())),
+                    button(fa_icon_solid("xmark").size(13.0))
+                        .on_press(Message::MacroRemove(m.id.clone())),
                 ]
                 .spacing(6)
                 .align_y(iced::Alignment::Center)
