@@ -1,6 +1,8 @@
+mod output;
 mod sender;
 mod sys;
 
+pub use output::{NdiOutputLoop, OutputCommand};
 pub use sender::NdiSender;
 
 use crate::Result;

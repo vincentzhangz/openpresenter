@@ -2,29 +2,60 @@
 name = "openpresenter"
 version = "0.1.0"
 edition = "2024"
+authors = ["Vincent <vincentzhangz@outlook.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/vincentzhangz/openpresenter"
+description = "Modern open-source live presentation software built in Rust"
 
 [features]
 default = ["ndi-sdk"]
 ndi-sdk = []
 
 [dependencies]
-anyhow = "1.0.101"
-async-trait = "0.1.89"
-chrono = { version = "0.4.43", features = ["serde"] }
-dirs = "6.0.0"
-ffmpeg-next = "8.0.0"
-futures = "0.3.31"
-glyphon = "0.10.0"
-iced = { version = "0.14.0", features = ["tokio", "wgpu"] }
-image = "0.25.9"
+anyhow = "1.0.102"
+async-trait = "0.1"
+axum = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+env_logger = "0.11"
+ffmpeg-next = "8"
+futures = "0.3.32"
+glyphon = "0.10"
+iced = { version = "0.14", features = [
+    "tokio",
+    "wgpu",
+    "canvas",
+    "image",
+    "svg",
+    "advanced",
+] }
+iced_font_awesome = "0.4.2"
+image = "0.25"
+log = "0.4"
+lru = "0.16"
 pollster = "0.4"
-rusqlite = { version = "0.38.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-thiserror = "2.0.18"
-tokio = { version = "1.49", features = ["full"] }
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
-wgpu = "28.0.0"
+rfd = "0.17"
+rodio = { version = "0.22", default-features = false, features = [
+    "playback",
+    "mp3",
+    "wav",
+    "flac",
+    "vorbis",
+] }
+rosc = "0.11"
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+toml = "1"
+tower = "0.5"
+uuid = { version = "1.21", features = ["v4", "serde"] }
+wgpu = "28"
+zip = { version = "8", features = ["deflate"] }
 
 [build-dependencies]
 bindgen = "0.72.1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -30,7 +30,7 @@ impl Default for NDIlib_video_frame_v2_t {
             frame_rate_n: 60,
             frame_rate_d: 1,
             picture_aspect_ratio: 16.0 / 9.0,
-            frame_format_type: 0, // Progressive
+            frame_format_type: 0,
             timecode: 0,
             p_data: std::ptr::null(),
             line_stride_in_bytes: 0,
@@ -48,9 +48,7 @@ pub struct NDIlib_send_create_t {
     pub clock_audio: bool,
 }
 
-pub const FOURCC_BGRA: u32 = 0x41524742; // 'BGRA'
-#[allow(dead_code)]
-pub const FOURCC_UYVY: u32 = 0x59565955; // 'UYVY' (reserved for future use)
+pub const FOURCC_BGRA: u32 = 0x41524742;
 
 #[cfg(not(feature = "ndi-sdk"))]
 #[allow(non_snake_case)]
@@ -71,7 +69,7 @@ pub unsafe fn NDIlib_send_create(
     _p_create_settings: *const NDIlib_send_create_t,
 ) -> *mut NDIlib_send_instance_t {
     eprintln!("NDI stub: send_create called (returning dummy pointer)");
-    0x1 as *mut NDIlib_send_instance_t
+    std::ptr::dangling_mut::<NDIlib_send_instance_t>()
 }
 
 #[cfg(not(feature = "ndi-sdk"))]

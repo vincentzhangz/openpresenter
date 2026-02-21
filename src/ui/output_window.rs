@@ -1,52 +1,39 @@
-use iced::widget::container;
-use iced::{Color, Element, Length, Task};
+use crate::slides::Transition;
+use crate::ui::messages::Message;
+use crate::ui::presenter::canvas::presenter_canvas_panel;
+use iced::{Background, Color, Element, Length, widget::container};
 
-pub struct OutputWindow {
-    background_color: Color,
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    SetBackground(Color),
-}
-
-impl OutputWindow {
-    pub fn new() -> (Self, Task<Message>) {
-        (
-            Self {
-                background_color: Color::BLACK,
-            },
-            Task::none(),
-        )
-    }
-
-    pub fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::SetBackground(color) => {
-                self.background_color = color;
-            }
-        }
-        Task::none()
-    }
-
-    pub fn view(&self) -> Element<'_, Message> {
-        container("")
+pub fn view<'a>(
+    current_slide: Option<&'a crate::slides::Slide>,
+    from_slide: Option<&'a crate::slides::Slide>,
+    transition: Transition,
+    progress: f32,
+    video_frame: Option<&'a iced::widget::image::Handle>,
+    black_screen: bool,
+) -> Element<'a, Message> {
+    if black_screen || current_slide.is_none() {
+        return container("")
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(self.background_color)),
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::BLACK)),
                 ..Default::default()
             })
-            .into()
+            .into();
     }
 
-    pub fn set_background(&mut self, color: Color) {
-        self.background_color = color;
-    }
-}
-
-impl Default for OutputWindow {
-    fn default() -> Self {
-        Self::new().0
-    }
+    container(presenter_canvas_panel(
+        current_slide,
+        from_slide,
+        transition,
+        progress,
+        video_frame,
+    ))
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(|_| container::Style {
+        background: Some(Background::Color(Color::BLACK)),
+        ..Default::default()
+    })
+    .into()
 }
