@@ -1,5 +1,3 @@
-pub mod actions;
-
 use crate::{Result, db::Database};
 
 pub struct App {

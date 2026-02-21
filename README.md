@@ -1,180 +1,326 @@
 # OpenPresenter
 
-A modern presentation software built with Rust, featuring NDI video output for professional live production workflows. Similar to ProPresenter, but open source and cross-platform.
+> A modern, open-source live presentation application built in Rust — designed for houses of worship, live events, and broadcast workflows.
 
-> ⚠️ **Early Stage Development**: This project is in active development. APIs and features may change without notice. Breaking changes should be expected.
+[![CI](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml/badge.svg)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org/)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+
+> [!WARNING]
+> **Early Development** — OpenPresenter is currently in active early development. APIs, data formats, and features may change without notice between versions. Expect rough edges, missing features, and occasional crashes. **Not recommended for production use yet.**
+
+OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rust. It targets live production environments where reliability, low latency, and NDI video output matter. The entire stack — UI, renderer, database, media pipeline, and HTTP/OSC trigger system — lives in a single codebase with no Electron or web runtime.
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Tech Stack](#tech-stack)
+- [License](#license)
+
+---
 
 ## Features
 
-### Currently Implemented ✅
+### Implemented
 
-- **Modern UI**: Built with [iced](https://iced.rs/) using the Elm architecture for predictable state management
-- **Presentation Library**: SQLite-backed library with full-text search support (FTS5)
-- **Database Management**: Create, edit, and organize presentations with CRUD operations
-- **NDI Integration**: FFI bindings to NDI SDK v6 for professional video output
-- **GPU Acceleration**: Hardware-accelerated rendering with [wgpu](https://wgpu.rs/) (Metal/Vulkan/DX12)
-- **Cross-Platform**: Runs on macOS, with Windows and Linux support planned
+| Area                  | Details                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| **Editor UI**         | Dark three-panel layout: slide thumbnail sidebar, canvas editor, tabbed inspector   |
+| **Presenter view**    | Full-screen show mode with visual slide sidebar and toolbar                         |
+| **Library**           | SQLite-backed presentation and song library with FTS5 full-text search              |
+| **CRUD**              | Create, rename, delete presentations, slides, and songs                             |
+| **Text slides**       | Configurable font, size, color, alignment, text transforms per slide                |
+| **Layers**            | Per-slide layer stack: text, background color/image, video                          |
+| **Songs & lyrics**    | Song library with verse/chorus structure; OpenLyrics XML import/export              |
+| **Import / Export**   | OpenLyrics (`.xml`), OpenPresenter Package (`.opp` — zip bundle)                    |
+| **Transitions**       | Cut, Fade, and Slide (horizontal wipe) — duration per slide                         |
+| **Props & Looks**     | Lower-third and logo overlays; save/restore visibility "Looks"                      |
+| **NDI output**        | Real-time 30 fps NDI stream via NDI SDK v6 FFI bindings                             |
+| **GPU text**          | Hardware-accelerated text via [glyphon](https://github.com/grovesNL/glyphon) + wgpu |
+| **Software renderer** | CPU BGRA rasteriser with shadow, outline, and alpha blending (fallback)             |
+| **Video decoding**    | FFmpeg-backed frame decoder with hardware-accelerated paths where available         |
+| **Audio playback**    | rodio-based audio player with load/play/pause/stop/volume                           |
+| **Recording**         | H.264 video recording pipeline via FFmpeg encoder with bounded backpressure         |
+| **HTTP triggers**     | axum 0.8 REST API for remote slide control (`/api/slides/next`, etc.)               |
+| **OSC triggers**      | rosc-powered Open Sound Control listener (`/slide/next`, `/black`, etc.)            |
+| **Macros**            | Scheduled trigger sequences with optional looping                                   |
+| **Themes**            | Reusable visual themes stored in the database                                       |
+| **Service planning**  | Service plan with ordered items backed by SQLite                                    |
+| **Bible**             | Bible verse database with FTS5 search (translations, books, chapters)               |
+| **CI**                | GitHub Actions pipeline: fmt → clippy → test → Linux build check                    |
 
-### In Development 🚧
+### In Progress
 
-- Video frame decoding and playback (FFmpeg integration)
-- GPU-accelerated text rendering with glyphon
-- Background images and video support
-- Slide compositor with layer blending
-- Transition effects (fade, cut, slide)
-- Real-time NDI video output
+- Stage display (secondary monitor audience view)
+- Multi-monitor output management
+- Slide compositor with full layer blending
 
-### Planned 📋
+### Planned
 
-- Full-text search for songs and lyrics
-- Import from ProPresenter and OpenLyrics formats
-- Media library with thumbnail generation
-- Keyboard shortcuts and hotkeys
-- Stage display mode
-- Multi-monitor support
-- Recording and export capabilities
+- Windows and Linux packaging
+- Hotkey / MIDI trigger backend
+- Thumbnail generation for video media
+- ProPresenter 6/7 import
+
+---
+
+## Architecture
+
+```
+src/
+├── slides/         # Core data model — Presentation, Slide, Song, Verse, Layer, Prop
+├── db/             # SQLite persistence (rusqlite) with versioned migrations
+├── render/         # Software BGRA rasteriser + GPU glyphon/wgpu text renderer
+├── ndi/            # FFI bindings to NDI SDK v6; async sender loop
+├── import/         # OpenLyrics XML + OPP zip import/export
+├── media/          # FFmpeg video decoder, rodio audio player
+├── recording/      # H.264 recording pipeline via FFmpeg encoder
+├── triggers/       # HTTP (axum), OSC (rosc), and automation macro subsystems
+├── output/         # Output window management
+├── config.rs       # TOML config with platform-aware data directories
+└── ui/             # iced 0.14 application — all UI components and message handlers
+```
+
+**Thread model**
+
+| Thread       | Role                                                           |
+| ------------ | -------------------------------------------------------------- |
+| Main         | iced event loop + UI rendering                                 |
+| NDI sender   | 30 fps async task — renders frame, sends via NDI, sleeps       |
+| Encoder      | Bounded channel consumer — receives BGRA frames, encodes H.264 |
+| HTTP server  | axum tokio task — sends `TriggerAction` over mpsc channel      |
+| OSC listener | UDP tokio task — decodes OSC packets, sends `TriggerAction`    |
+
+All cross-thread communication uses `tokio::sync::mpsc`; the UI receives trigger actions via a single subscription channel.
+
+---
 
 ## Prerequisites
 
-### macOS
-- Xcode Command Line Tools
-- Rust 1.93+ (edition 2024)
-- [Homebrew](https://brew.sh/)
-- FFmpeg 8.0.1+ (`brew install ffmpeg`)
-- pkg-config (`brew install pkgconf`)
-- [NDI SDK for Apple](https://ndi.video/for-developers/ndi-sdk/) v6.0+
+### macOS (primary platform)
 
-### Windows
-Windows support is planned. Required dependencies:
-- Visual Studio Build Tools
-- Rust 1.93+
-- FFmpeg
-- NDI SDK for Windows
+- **Xcode Command Line Tools** — `xcode-select --install`
+- **Rust 1.93+** — [rustup.rs](https://rustup.rs/)
+- **FFmpeg 7+** — `brew install ffmpeg`
+- **pkg-config** — `brew install pkgconf`
+- **NDI SDK v6** _(optional — stub mode available without it)_ — [ndi.video/for-developers](https://ndi.video/for-developers/ndi-sdk/)
 
 ### Linux
-Linux support is planned. Required dependencies:
-- GCC/Clang
-- Rust 1.93+
-- FFmpeg
-- NDI SDK for Linux
+
+```bash
+sudo apt-get install -y \
+    build-essential pkg-config \
+    libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+    libasound2-dev libssl-dev
+```
+
+### Windows
+
+- Visual Studio Build Tools 2022
+- Rust 1.93+ via rustup
+- [vcpkg](https://vcpkg.io/) for FFmpeg (`vcpkg install ffmpeg:x64-windows`)
+- NDI SDK for Windows
+
+---
 
 ## Installation
 
 ```bash
-# Clone the repository
+# Clone
 git clone https://github.com/vincentzhangz/openpresenter.git
 cd openpresenter
 
-# Install system dependencies (macOS)
+# macOS: install system dependencies
 brew install ffmpeg pkgconf
 
-# Build the project
+# Build (release)
 cargo build --release
 
-# Run the application
+# Run
 cargo run --release
+```
+
+### Without NDI SDK
+
+The NDI feature is compiled behind a Cargo feature flag. To build without the SDK:
+
+```bash
+cargo build --no-default-features
 ```
 
 ### NDI SDK Setup
 
-1. Download the [NDI SDK](https://ndi.video/for-developers/ndi-sdk/) for your platform
+1. Download the [NDI SDK](https://ndi.video/for-developers/ndi-sdk/) for your platform.
 2. Install to the default location:
    - **macOS**: `/Library/NDI SDK for Apple/lib/macOS/libndi.dylib`
    - **Windows**: `C:\Program Files\NDI\NDI SDK\Lib\x64\Processing.NDI.Lib.x64.dll`
    - **Linux**: `/usr/lib/libndi.so`
-3. The application will dynamically link to the NDI library at runtime
 
-### FFmpeg Configuration
+### FFmpeg path (macOS / Homebrew)
 
-On macOS, the build system uses Homebrew's FFmpeg installation. Configuration is in `.cargo/config.toml`:
+Build configuration lives in `.cargo/config.toml`. For Apple Silicon Homebrew:
+
 ```toml
 [env]
 FFMPEG_DIR = "/opt/homebrew/opt/ffmpeg"
-CPATH = "/opt/homebrew/opt/ffmpeg/include"
+CPATH     = "/opt/homebrew/opt/ffmpeg/include"
 ```
 
-For custom FFmpeg installations, update these paths accordingly.
+Update for Intel (`/usr/local/opt/ffmpeg`) or custom installations as needed.
+
+---
 
 ## Configuration
 
-Application data is stored in platform-specific directories:
-- **macOS**: `~/Library/Application Support/openpresenter/`
-- **Windows**: `%APPDATA%\openpresenter\`
-- **Linux**: `~/.config/openpresenter/`
+Application data is stored in platform-specific directories (created automatically on first run):
 
-The database file (`library.db`) and configuration are automatically created on first run.
+| Platform | Path                                           |
+| -------- | ---------------------------------------------- |
+| macOS    | `~/Library/Application Support/openpresenter/` |
+| Windows  | `%APPDATA%\openpresenter\`                     |
+| Linux    | `~/.config/openpresenter/`                     |
+
+Config file: `config.toml` · Database: `library.db`
+
+Key config options:
+
+```toml
+[output]
+width  = 1920
+height = 1080
+
+[ndi]
+source_name = "OpenPresenter"
+
+[http_trigger]
+port = 9090
+
+[osc_trigger]
+port = 9000
+```
+
+---
 
 ## Development
 
-### Building from Source
-
 ```bash
-# Debug build
-cargo build
+# Check for compile errors (no NDI SDK required)
+cargo check --no-default-features
 
-# Release build with optimizations
-cargo build --release
+# Run all tests
+cargo test --no-default-features
 
-# Run in development mode
-cargo run
-
-# Run tests
-cargo test
-```
-
-### Code Quality
-
-```bash
-# Check for errors
-cargo check
-
-# Format code
+# Format
 cargo fmt
 
-# Run linter
-cargo clippy
+# Lint (warnings are errors in CI)
+cargo clippy --no-default-features -- -D warnings
 
-# Sort dependencies (requires cargo-sort)
-cargo sort -w
+# Build docs
+cargo doc --no-deps --open
 ```
 
-### Project Guidelines
+### HTTP Trigger API
 
-- Uses Rust edition 2024
-- Follows Rust idioms from `.github/instructions/rust.instructions.md`
-- All code must pass `cargo clippy` without warnings
-- Format with `cargo fmt` before committing
+| Method | Path                       | Action                                   |
+| ------ | -------------------------- | ---------------------------------------- |
+| `GET`  | `/api/status`              | Health check                             |
+| `POST` | `/api/slides/next`         | Next slide                               |
+| `POST` | `/api/slides/prev`         | Previous slide                           |
+| `POST` | `/api/slides/goto/{index}` | Go to slide by index                     |
+| `POST` | `/api/black/{on}`          | Black screen (`true`/`1`/`on` to enable) |
+| `POST` | `/api/clear`               | Clear output                             |
+| `POST` | `/api/timer/start`         | Start timer                              |
+| `POST` | `/api/timer/stop`          | Stop timer                               |
+| `POST` | `/api/timer/reset`         | Reset timer                              |
+
+### OSC Addresses
+
+| Address        | Args         | Action              |
+| -------------- | ------------ | ------------------- |
+| `/slide/next`  | —            | Next slide          |
+| `/slide/prev`  | —            | Previous slide      |
+| `/slide/goto`  | `int` index  | Go to slide         |
+| `/black`       | `int`/`bool` | Black screen on/off |
+| `/clear`       | —            | Clear output        |
+| `/timer/start` | —            | Start timer         |
+| `/timer/stop`  | —            | Stop timer          |
+| `/timer/reset` | —            | Reset timer         |
+
+---
 
 ## Contributing
 
-Contributions are welcome! This project is in active development.
+Contributions are welcome. Please read the guidelines below before opening a pull request.
 
-### How to Contribute
+### Getting Started
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and linting (`cargo test && cargo clippy`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+1. **Fork** the repository and clone your fork.
+2. **Create a branch** from `main`:
+   ```bash
+   git checkout -b feat/your-feature
+   ```
+3. **Make changes** — keep commits focused and atomic.
+4. **Test and lint**:
+   ```bash
+   cargo test --no-default-features
+   cargo clippy --no-default-features -- -D warnings
+   cargo fmt --check
+   ```
+5. **Open a pull request** against `main` with a clear description of what and why.
 
-### Development Priorities
+### Filing Issues
 
-Current focus areas for contributions:
-- Video decoding implementation with FFmpeg
-- GPU text rendering with glyphon
-- Slide compositor and layer blending
-- NDI output loop implementation
-- Cross-platform testing and compatibility
+- **Bug reports**: Include OS, `rustc --version`, steps to reproduce, and full error output.
+- **Feature requests**: Describe the use case and the problem it solves.
+- **Security issues**: Contact the maintainer directly rather than filing a public issue.
 
-## Resources
+### Pull Request Checklist
 
-- [iced Documentation](https://docs.rs/iced/) - UI framework
-- [wgpu Guide](https://sotrh.github.io/learn-wgpu/) - GPU rendering
-- [FFmpeg Documentation](https://ffmpeg.org/documentation.html) - Media processing
-- [NDI SDK Download](https://ndi.video/for-developers/ndi-sdk/) - Video streaming
+- [ ] `cargo test --no-default-features` passes
+- [ ] `cargo clippy --no-default-features -- -D warnings` passes
+- [ ] `cargo fmt --check` passes
+- [ ] New public items have doc comments
+- [ ] Reviewer assigned via CODEOWNERS has approved
+
+---
+
+## Tech Stack
+
+| Component      | Crate                                          | Version |
+| -------------- | ---------------------------------------------- | ------- |
+| UI framework   | [iced](https://iced.rs/)                       | 0.14    |
+| GPU rendering  | [wgpu](https://wgpu.rs/)                       | 28      |
+| Text rendering | [glyphon](https://docs.rs/glyphon/)            | 0.10    |
+| Database       | [rusqlite](https://docs.rs/rusqlite/)          | 0.38    |
+| Media decoding | [ffmpeg-next](https://docs.rs/ffmpeg-next/)    | 8       |
+| Audio          | [rodio](https://docs.rs/rodio/)                | 0.22    |
+| NDI output     | NDI SDK v6 (bindgen FFI)                       | 6       |
+| HTTP triggers  | [axum](https://docs.rs/axum/)                  | 0.8     |
+| OSC triggers   | [rosc](https://docs.rs/rosc/)                  | 0.11    |
+| Serialization  | [serde](https://serde.rs/) + serde_json + toml | —       |
+| Async runtime  | [tokio](https://tokio.rs/)                     | 1       |
+
+---
 
 ## License
 
-TBD
+Copyright 2026 Vincent
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+You may not use this software except in compliance with the License.
+A copy of the License is included in this repository as [`LICENSE`](LICENSE).
+
+---
+
+*OpenPresenter is not affiliated with nor endorsed by Renewed Vision (ProPresenter).*

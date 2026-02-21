@@ -1,5 +1,24 @@
+pub mod audio;
+pub mod bible;
+pub mod components;
+pub mod dialogs;
+pub mod editor;
+pub(crate) mod handlers;
+pub mod library;
 pub mod main_window;
+pub mod messages;
+pub mod navbar;
 pub mod output_window;
+pub mod planning;
+pub mod presenter;
+pub mod props;
+pub mod recording;
+pub mod settings;
+pub mod sidebar;
+pub mod songs;
+pub mod stage;
+pub(crate) mod state;
+pub mod theme;
 
 pub use main_window::MainWindow;
-pub use output_window::OutputWindow;
+pub use messages::Message;

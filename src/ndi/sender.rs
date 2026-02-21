@@ -64,7 +64,7 @@ impl NdiSender {
             frame_rate_n: self.frame_rate.numerator,
             frame_rate_d: self.frame_rate.denominator,
             picture_aspect_ratio: self.width as f32 / self.height as f32,
-            frame_format_type: 0, // Progressive
+            frame_format_type: 0,
             timecode: 0,
             p_data: frame.data.as_ptr(),
             line_stride_in_bytes: (self.width * 4) as i32,
@@ -81,6 +81,14 @@ impl NdiSender {
 
     pub fn source_name(&self) -> &str {
         &self.source_name
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
     }
 }
 
