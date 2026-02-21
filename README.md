@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml/badge.svg)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fvincentzhangz%2F98482a1448f7b055a193c05f9acf683b%2Fraw%2Fopenpresenter-junit-tests.json)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fvincentzhangz%2F98482a1448f7b055a193c05f9acf683b%2Fraw%2Fopenpresenter-lcov-coverage.json)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org/)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)

@@ -103,13 +103,15 @@ jobs:
             ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-test-
             ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
+      - name: Install cargo-nextest and cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,llvm-cov
 
-      - name: Run tests (no NDI SDK)
-        run: cargo nextest run --no-default-features --profile ci
+      - name: Run tests with coverage (no NDI SDK)
+        run: cargo llvm-cov nextest --no-default-features --profile ci --lcov --output-path lcov.info
 
-      - name: Update test badge
+      - name: Update test and coverage badges
         if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: gaelgirodon/ci-badges-action@v1
         with:
