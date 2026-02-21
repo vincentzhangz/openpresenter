@@ -20,7 +20,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  CACHE_VERSION: v2
+  CACHE_VERSION: v3
 
 jobs:
   # ── Format ────────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ jobs:
             libswscale-dev libswresample-dev \
             libclang-dev \
             libasound2-dev
-          echo "FFMPEG_DIR=/usr" >> "$GITHUB_ENV"
+          echo "CPATH=/usr/include/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
       - name: Restore cargo cache
         uses: actions/cache@v4
