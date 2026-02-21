@@ -41,6 +41,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: macos-latest # wgpu/Metal requires macOS in CI
+    needs: [fmt]
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +49,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Install system dependencies (macOS)
+        run: |
+          brew install ffmpeg pkg-config
+          echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Restore cargo cache
         uses: actions/cache@v4
@@ -76,6 +83,12 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies (macOS)
+        run: |
+          brew install ffmpeg pkg-config
+          echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
+
       - name: Restore cargo cache
         uses: actions/cache@v4
         with:
@@ -88,9 +101,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-
             ${{ runner.os }}-cargo-
-
-      - name: Build (no NDI SDK)
-        run: cargo build --no-default-features
 
       - name: Run tests (no NDI SDK)
         run: cargo test --no-default-features
@@ -114,7 +124,8 @@ jobs:
             pkg-config \
             libavcodec-dev libavformat-dev libavutil-dev \
             libswscale-dev libswresample-dev \
-            libclang-dev
+            libclang-dev \
+            libasound2-dev
 
       - name: Restore cargo cache
         uses: actions/cache@v4
