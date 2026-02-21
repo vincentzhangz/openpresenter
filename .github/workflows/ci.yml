@@ -106,7 +106,7 @@ jobs:
       - name: Install cargo-nextest and cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest,llvm-cov
+          tool: nextest,cargo-llvm-cov
 
       - name: Run tests with coverage (no NDI SDK)
         run: cargo llvm-cov nextest --no-default-features --profile ci --lcov --output-path lcov.info
