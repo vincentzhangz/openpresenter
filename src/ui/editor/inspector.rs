@@ -3,12 +3,11 @@ use crate::slides::{
     SlideTheme, TextAlignment, TextTransform, Transition,
 };
 use crate::ui::components::{
-    color_channel_slider, color_swatch_btn, compact_toggle_btn, option_btn, section_label,
-    tab_bar, tab_btn, toggle_btn,
+    color_channel_slider, color_swatch_btn, compact_toggle_btn, option_btn, section_label, tab_bar,
+    tab_btn, toggle_btn,
 };
 use crate::ui::messages::{InspectorTab, Message};
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Color, Element, Length,
     widget::{
@@ -16,6 +15,7 @@ use iced::{
         text_input,
     },
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub const PANEL_WIDTH: u16 = 290;
 
@@ -129,8 +129,6 @@ pub fn inspector_panel<'a>(
         .style(theme::panel_style)
         .into()
 }
-
-
 
 fn empty_inspector<'a>() -> Element<'a, Message> {
     container(text("Select a slide").size(13).color(theme::TEXT_MUTED))
@@ -439,8 +437,6 @@ fn slide_tab<'a>(
     panel
 }
 
-
-
 fn speed_btn<'a>(label: &'a str, speed: f64, current_speed: f64) -> Element<'a, Message> {
     let active = (current_speed - speed).abs() < 0.05;
     option_btn(label, active, Message::VideoSpeedChanged(speed))
@@ -544,13 +540,13 @@ fn video_content_tab<'a>(
                     .style(theme::primary_button),
                 Space::new().width(8),
                 button(fa_icon_solid("repeat").size(12.0))
-                .on_press(Message::VideoLoopToggled(!video_looping))
-                .padding([6, 12])
-                .style(if video_looping {
-                    theme::primary_button
-                } else {
-                    theme::secondary_button
-                }),
+                    .on_press(Message::VideoLoopToggled(!video_looping))
+                    .padding([6, 12])
+                    .style(if video_looping {
+                        theme::primary_button
+                    } else {
+                        theme::secondary_button
+                    }),
             ]
             .align_y(Alignment::Center),
         );
@@ -558,14 +554,21 @@ fn video_content_tab<'a>(
         panel = panel.push(section_label("VOLUME"));
         panel = panel.push(
             row![
-                button(fa_icon_solid(if video_muted { "volume-xmark" } else { "volume-high" }).size(12.0))
-                    .on_press(Message::VideoMuteToggled)
-                    .padding([5, 8])
-                    .style(if video_muted {
-                        theme::primary_button
+                button(
+                    fa_icon_solid(if video_muted {
+                        "volume-xmark"
                     } else {
-                        theme::secondary_button
-                    }),
+                        "volume-high"
+                    })
+                    .size(12.0)
+                )
+                .on_press(Message::VideoMuteToggled)
+                .padding([5, 8])
+                .style(if video_muted {
+                    theme::primary_button
+                } else {
+                    theme::secondary_button
+                }),
                 Space::new().width(6),
                 slider(0.0..=1.0, video_volume, Message::VideoVolumeChanged)
                     .step(0.05)
@@ -1067,9 +1070,21 @@ fn layer_props_panel<'a>(
                     .width(80),
             );
             col = col.push(prop_label("Colour  (R / G / B)"));
-            col = col.push(color_channel_slider("R", style.color.r, Message::SelectedLayerTextColorR));
-            col = col.push(color_channel_slider("G", style.color.g, Message::SelectedLayerTextColorG));
-            col = col.push(color_channel_slider("B", style.color.b, Message::SelectedLayerTextColorB));
+            col = col.push(color_channel_slider(
+                "R",
+                style.color.r,
+                Message::SelectedLayerTextColorR,
+            ));
+            col = col.push(color_channel_slider(
+                "G",
+                style.color.g,
+                Message::SelectedLayerTextColorG,
+            ));
+            col = col.push(color_channel_slider(
+                "B",
+                style.color.b,
+                Message::SelectedLayerTextColorB,
+            ));
             col = col.push(
                 row![
                     text("Hex").size(11).color(theme::TEXT_MUTED).width(28),
@@ -1211,9 +1226,21 @@ fn layer_props_panel<'a>(
             );
             if style.glow_enabled {
                 col = col.push(prop_label("Glow Colour  (R / G / B)"));
-                col = col.push(color_channel_slider("R", style.glow_color.r, Message::SelectedLayerGlowColorR));
-                col = col.push(color_channel_slider("G", style.glow_color.g, Message::SelectedLayerGlowColorG));
-                col = col.push(color_channel_slider("B", style.glow_color.b, Message::SelectedLayerGlowColorB));
+                col = col.push(color_channel_slider(
+                    "R",
+                    style.glow_color.r,
+                    Message::SelectedLayerGlowColorR,
+                ));
+                col = col.push(color_channel_slider(
+                    "G",
+                    style.glow_color.g,
+                    Message::SelectedLayerGlowColorG,
+                ));
+                col = col.push(color_channel_slider(
+                    "B",
+                    style.glow_color.b,
+                    Message::SelectedLayerGlowColorB,
+                ));
             }
             col = col.push(prop_label("Text Stroke"));
             col = col.push(
@@ -1230,9 +1257,21 @@ fn layer_props_panel<'a>(
             );
             if style.text_stroke_width > 0.0 {
                 col = col.push(prop_label("Stroke Colour  (R / G / B)"));
-                col = col.push(color_channel_slider("R", style.text_stroke_color.r, Message::SelectedLayerTextStrokeColorR));
-                col = col.push(color_channel_slider("G", style.text_stroke_color.g, Message::SelectedLayerTextStrokeColorG));
-                col = col.push(color_channel_slider("B", style.text_stroke_color.b, Message::SelectedLayerTextStrokeColorB));
+                col = col.push(color_channel_slider(
+                    "R",
+                    style.text_stroke_color.r,
+                    Message::SelectedLayerTextStrokeColorR,
+                ));
+                col = col.push(color_channel_slider(
+                    "G",
+                    style.text_stroke_color.g,
+                    Message::SelectedLayerTextStrokeColorG,
+                ));
+                col = col.push(color_channel_slider(
+                    "B",
+                    style.text_stroke_color.b,
+                    Message::SelectedLayerTextStrokeColorB,
+                ));
             }
             let _ = content;
         }
@@ -1240,10 +1279,26 @@ fn layer_props_panel<'a>(
             fill, stroke_width, ..
         } => {
             col = col.push(prop_label("Fill Colour  (R / G / B / A)"));
-            col = col.push(color_channel_slider("R", fill.r, Message::SelectedLayerShapeFillR));
-            col = col.push(color_channel_slider("G", fill.g, Message::SelectedLayerShapeFillG));
-            col = col.push(color_channel_slider("B", fill.b, Message::SelectedLayerShapeFillB));
-            col = col.push(color_channel_slider("A", fill.a, Message::SelectedLayerShapeFillA));
+            col = col.push(color_channel_slider(
+                "R",
+                fill.r,
+                Message::SelectedLayerShapeFillR,
+            ));
+            col = col.push(color_channel_slider(
+                "G",
+                fill.g,
+                Message::SelectedLayerShapeFillG,
+            ));
+            col = col.push(color_channel_slider(
+                "B",
+                fill.b,
+                Message::SelectedLayerShapeFillB,
+            ));
+            col = col.push(color_channel_slider(
+                "A",
+                fill.a,
+                Message::SelectedLayerShapeFillA,
+            ));
             col = col.push(prop_label("Stroke Width"));
             col = col.push(
                 text_input("0", state.editing_stroke_width.as_str())

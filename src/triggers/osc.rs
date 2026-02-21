@@ -19,9 +19,10 @@ pub async fn run_listener(
             Ok((_, OscPacket::Bundle(bundle))) => {
                 for item in bundle.content {
                     if let OscPacket::Message(msg) = item
-                        && let Some(action) = dispatch_osc(&msg) {
-                            let _ = tx.send(action).await;
-                        }
+                        && let Some(action) = dispatch_osc(&msg)
+                    {
+                        let _ = tx.send(action).await;
+                    }
                 }
             }
             Err(e) => eprintln!("[osc] decode error: {e}"),

@@ -4,11 +4,11 @@ use crate::ui::messages::Message;
 use crate::ui::presenter::TransitionState;
 use crate::ui::presenter::canvas::{next_slide_canvas_panel, presenter_canvas_panel};
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Background, Border, Element, Length,
     widget::{Space, button, column, container, row, scrollable, text},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub fn stage_view<'a>(
     presentation: &'a Presentation,
@@ -99,14 +99,16 @@ fn stage_toolbar(
         row![
             button(
                 row![
-                    fa_icon_solid("arrow-left").size(12.0).color(theme::TEXT_SECONDARY),
+                    fa_icon_solid("arrow-left")
+                        .size(12.0)
+                        .color(theme::TEXT_SECONDARY),
                     text(" Show").size(12).color(theme::TEXT_SECONDARY),
                 ]
                 .align_y(Alignment::Center),
             )
-                .on_press(Message::ToggleStageDisplay)
-                .padding([6, 14])
-                .style(theme::ghost_button),
+            .on_press(Message::ToggleStageDisplay)
+            .padding([6, 14])
+            .style(theme::ghost_button),
             Space::new().width(12),
             text("STAGE DISPLAY").size(13).color(theme::TEXT_MUTED),
             Space::new().width(Length::Fill),

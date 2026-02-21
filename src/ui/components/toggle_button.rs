@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Element, widget::{button, text}};
+use iced::{
+    Element,
+    widget::{button, text},
+};
 
 /// Binary toggle button (e.g. Bold / Italic).
 ///

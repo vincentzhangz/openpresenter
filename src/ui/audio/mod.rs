@@ -1,10 +1,10 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Element, Length,
     widget::{Space, button, container, row, slider, text},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub fn audio_bar<'a>(
     track_name: Option<&'a str>,
@@ -39,7 +39,11 @@ pub fn audio_bar<'a>(
     let loop_btn = button(fa_icon_solid("repeat").size(btn_size))
         .on_press(Message::AudioToggleLoop)
         .padding([5u16, 10u16])
-        .style(if looping { theme::primary_button } else { theme::ghost_button });
+        .style(if looping {
+            theme::primary_button
+        } else {
+            theme::ghost_button
+        });
 
     let vol_slider = slider(0.0..=1.0, volume, Message::AudioVolumeChanged)
         .step(0.01)

@@ -6,13 +6,13 @@ use crate::ui::editor::canvas::bg_to_color;
 use crate::ui::messages::Message;
 use crate::ui::presenter::canvas::{next_slide_canvas_panel, presenter_canvas_panel};
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Background, Border, Color, Element, Length,
     widget::{
         Column, Space, button, checkbox, column, container, row, scrollable, text, text_input,
     },
 };
+use iced_font_awesome::fa_icon_solid;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -22,7 +22,6 @@ pub struct TransitionState {
     pub progress: f32,
     pub start: Instant,
 }
-
 
 #[allow(clippy::too_many_arguments)]
 pub fn presenting_view<'a>(
@@ -181,7 +180,11 @@ fn top_controls<'a>(
         } else {
             ("Fullscreen", theme::ghost_button)
         };
-        let fs_icon = if output_is_fullscreen { "compress" } else { "expand" };
+        let fs_icon = if output_is_fullscreen {
+            "compress"
+        } else {
+            "expand"
+        };
         button(
             row![
                 fa_icon_solid(fs_icon).size(12.0),
@@ -210,14 +213,16 @@ fn top_controls<'a>(
     let toolbar_row = row![
         button(
             row![
-                fa_icon_solid("arrow-left").size(12.0).color(theme::TEXT_SECONDARY),
+                fa_icon_solid("arrow-left")
+                    .size(12.0)
+                    .color(theme::TEXT_SECONDARY),
                 text(" Back").size(12).color(theme::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
         )
-            .on_press(Message::BackToList)
-            .padding([6, 14])
-            .style(theme::ghost_button),
+        .on_press(Message::BackToList)
+        .padding([6, 14])
+        .style(theme::ghost_button),
         Space::new().width(14),
         text(&presentation.name).size(16).color(theme::TEXT_PRIMARY),
         Space::new().width(Length::Fill),
@@ -341,7 +346,11 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
             let bg_color = bg_to_color(&slide.background);
             let preview_str = match &slide.content {
                 crate::slides::SlideContent::Text { text, .. } => {
-                    if text.is_empty() { "(Empty)".to_string() } else { truncate(text, 28) }
+                    if text.is_empty() {
+                        "(Empty)".to_string()
+                    } else {
+                        truncate(text, 28)
+                    }
                 }
                 crate::slides::SlideContent::Image { .. } => "\u{1F4F7} Image".to_string(),
                 crate::slides::SlideContent::Video { .. } => "\u{1F3AC} Video".to_string(),
@@ -543,5 +552,3 @@ fn next_panel<'a>(next: Option<&'a Slide>) -> Element<'a, Message> {
     .style(theme::dark_panel_style)
     .into()
 }
-
-

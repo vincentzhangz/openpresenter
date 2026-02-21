@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, widget::{container, row, text}};
+use iced::{
+    Alignment, Element,
+    widget::{container, row, text},
+};
 
 /// Small green status badge indicating an active or live state (e.g. "NDI", "LIVE").
 pub fn live_badge<'a>(label: &'a str) -> Element<'a, Message> {

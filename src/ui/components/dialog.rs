@@ -1,6 +1,9 @@
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced::{Alignment, Element, Length, widget::{Row, Space, button, column, container, text}};
+use iced::{
+    Alignment, Element, Length,
+    widget::{Row, Space, button, column, container, text},
+};
 
 /// A centred modal card rendered on a dimmed overlay.
 ///

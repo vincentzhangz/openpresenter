@@ -93,8 +93,7 @@ pub fn parse_openlyrics_xml(xml: &str) -> Result<Song> {
         song.title = "Imported Song".to_string();
     }
 
-    let mut order_index = 0usize;
-    for verse_block in split_tag_blocks(xml, "verse") {
+    for (order_index, verse_block) in split_tag_blocks(xml, "verse").into_iter().enumerate() {
         let label =
             attr_value(&verse_block, "name").unwrap_or_else(|| format!("v{}", order_index + 1));
         let lines: Vec<String> = split_tag_blocks(&verse_block, "lines")
@@ -103,7 +102,6 @@ pub fn parse_openlyrics_xml(xml: &str) -> Result<Song> {
             .collect();
         let content = lines.join("\n");
         song.verses.push(Verse::new(label, content, order_index));
-        order_index += 1;
     }
 
     let now = chrono::Utc::now();

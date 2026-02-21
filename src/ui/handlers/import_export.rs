@@ -98,9 +98,10 @@ pub fn export_openlyrics(w: &mut MainWindow) -> Task<Message> {
         .save_file();
 
     if let Some(path) = dest
-        && let Err(e) = crate::import::openlyrics::export_song(&song, &path) {
-            eprintln!("[export OpenLyrics] error: {e}");
-        }
+        && let Err(e) = crate::import::openlyrics::export_song(&song, &path)
+    {
+        eprintln!("[export OpenLyrics] error: {e}");
+    }
     Task::none()
 }
 

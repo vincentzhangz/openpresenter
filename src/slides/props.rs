@@ -100,17 +100,24 @@ impl Prop {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum Mask {
     #[default]
     None,
-    Letterbox { bar_fraction: f32 },
-    Oval { feather: f32 },
-    FrameBorder { thickness: f32, color: [f32; 4] },
-    Custom { path: String },
+    Letterbox {
+        bar_fraction: f32,
+    },
+    Oval {
+        feather: f32,
+    },
+    FrameBorder {
+        thickness: f32,
+        color: [f32; 4],
+    },
+    Custom {
+        path: String,
+    },
 }
-
 
 impl std::fmt::Display for Mask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -113,7 +113,7 @@ pub(crate) fn clear_selection(w: &mut MainWindow) -> Task<Message> {
 }
 
 pub(crate) fn verses_per_slide_changed(w: &mut MainWindow, n: usize) -> Task<Message> {
-    w.bible.verses_per_slide = n.max(1).min(10);
+    w.bible.verses_per_slide = n.clamp(1, 10);
     Task::none()
 }
 

@@ -2,11 +2,11 @@ use crate::slides::{Background, Presentation};
 use crate::ui::components::{group_label_widget, truncate};
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Color, Element, Length,
     widget::{Column, Id, Space, button, column, container, row, scrollable, text},
 };
+use iced_font_awesome::fa_icon_solid;
 use std::sync::OnceLock;
 
 static SLIDE_LIST_SCROLL: OnceLock<Id> = OnceLock::new();
@@ -20,7 +20,6 @@ const THUMB_W: f32 = 118.0;
 const THUMB_H: f32 = 66.0;
 const ROW_PAD: u16 = 6;
 const COL_GAP: u16 = 6;
-
 
 pub fn slide_list<'a>(
     presentation: &'a Presentation,
@@ -192,9 +191,13 @@ fn slide_cell<'a>(
     let can_down = index < total - 1;
 
     let up_btn = {
-        let b = button(fa_icon_solid("arrow-up").size(10.0).color(theme::TEXT_MUTED))
-            .padding([1, 4])
-            .style(theme::ghost_button);
+        let b = button(
+            fa_icon_solid("arrow-up")
+                .size(10.0)
+                .color(theme::TEXT_MUTED),
+        )
+        .padding([1, 4])
+        .style(theme::ghost_button);
         if can_up {
             b.on_press(Message::MoveSlideUp(index))
         } else {
@@ -202,9 +205,13 @@ fn slide_cell<'a>(
         }
     };
     let down_btn = {
-        let b = button(fa_icon_solid("arrow-down").size(10.0).color(theme::TEXT_MUTED))
-            .padding([1, 4])
-            .style(theme::ghost_button);
+        let b = button(
+            fa_icon_solid("arrow-down")
+                .size(10.0)
+                .color(theme::TEXT_MUTED),
+        )
+        .padding([1, 4])
+        .style(theme::ghost_button);
         if can_down {
             b.on_press(Message::MoveSlideDown(index))
         } else {

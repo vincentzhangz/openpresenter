@@ -57,12 +57,10 @@ pub fn navbar<'a>(
         live_badge("NDI")
     } else {
         container(
-            row![
-                text("NDI Off").size(11).color(theme::TEXT_MUTED),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center)
-            .padding([3, 8]),
+            row![text("NDI Off").size(11).color(theme::TEXT_MUTED),]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .padding([3, 8]),
         )
         .style(|_t: &iced::Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color::from_rgba(
@@ -107,50 +105,30 @@ pub fn navbar<'a>(
             .on_press(Message::ToggleShortcutsOverlay)
             .padding([4, 10])
             .style(theme::ghost_button),
-        button(
-            text(if audio_panel_visible {
-                "Audio"
-            } else {
-                "Audio"
-            })
-            .size(11)
-            .color(if audio_panel_visible {
-                theme::ACCENT_BLUE
-            } else {
-                theme::TEXT_MUTED
-            }),
-        )
+        button(text("Audio").size(11).color(if audio_panel_visible {
+            theme::ACCENT_BLUE
+        } else {
+            theme::TEXT_MUTED
+        }),)
         .on_press(Message::AudioTogglePanel)
         .padding([4, 10])
         .style(theme::ghost_button),
-        button(
-            text(if triggers_panel_open {
-                "Triggers"
-            } else {
-                "Triggers"
-            })
-            .size(11)
-            .color(if triggers_panel_open {
-                theme::ACCENT_BLUE
-            } else {
-                theme::TEXT_MUTED
-            }),
-        )
+        button(text("Triggers").size(11).color(if triggers_panel_open {
+            theme::ACCENT_BLUE
+        } else {
+            theme::TEXT_MUTED
+        }),)
         .on_press(Message::ToggleTriggersPanel)
         .padding([4, 10])
         .style(theme::ghost_button),
         button(
-            text(if recording_active {
-                "REC"
-            } else {
-                "Rec"
-            })
-            .size(11)
-            .color(if recording_active {
-                theme::DANGER_RED
-            } else {
-                theme::TEXT_MUTED
-            }),
+            text(if recording_active { "REC" } else { "Rec" })
+                .size(11)
+                .color(if recording_active {
+                    theme::DANGER_RED
+                } else {
+                    theme::TEXT_MUTED
+                }),
         )
         .on_press(Message::ToggleRecordingPanel)
         .padding([4, 10])

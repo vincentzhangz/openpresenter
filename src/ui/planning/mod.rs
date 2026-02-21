@@ -2,11 +2,11 @@ use crate::slides::{Presentation, ServiceItem, ServicePlan, Song};
 use crate::ui::components::{divider, live_badge};
 use crate::ui::messages::Message;
 use crate::ui::theme;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Alignment, Background, Color, Element, Length, Padding,
     widget::{Column, Space, button, column, container, row, scrollable, text, text_input},
 };
+use iced_font_awesome::fa_icon_solid;
 
 #[allow(clippy::too_many_arguments)]
 pub fn planning_panel<'a>(
@@ -327,7 +327,10 @@ fn item_card<'a>(
     };
 
     let current_indicator: Element<'_, Message> = if is_current {
-        fa_icon_solid("caret-right").size(12.0).color(theme::LIVE_GREEN).into()
+        fa_icon_solid("caret-right")
+            .size(12.0)
+            .color(theme::LIVE_GREEN)
+            .into()
     } else {
         Space::new().width(12).into()
     };

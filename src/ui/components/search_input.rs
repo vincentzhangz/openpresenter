@@ -1,5 +1,8 @@
 use crate::ui::messages::Message;
-use iced::{Element, widget::{container, text_input}};
+use iced::{
+    Element,
+    widget::{container, text_input},
+};
 
 /// Padded search text-input with consistent inner and outer spacing.
 ///

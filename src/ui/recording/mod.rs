@@ -1,10 +1,10 @@
 use crate::recording::RecordingState;
 use crate::ui::messages::Message;
-use iced_font_awesome::fa_icon_solid;
 use iced::{
     Element, Length,
     widget::{Space, button, column, row, text, text_input},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub fn recording_panel<'a>(
     state: RecordingState,
