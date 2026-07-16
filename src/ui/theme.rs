@@ -3,27 +3,34 @@ use iced::{
     widget::{button, container},
 };
 
-pub const BG_DARKEST: Color = Color::from_rgb(0.102, 0.102, 0.102);
-pub const BG_DARK: Color = Color::from_rgb(0.129, 0.129, 0.129);
-pub const BG_PANEL: Color = Color::from_rgb(0.149, 0.149, 0.149);
-pub const BG_TOOLBAR: Color = Color::from_rgb(0.176, 0.176, 0.176);
+// ProPresenter-style charcoal palette.
+pub const BG_DARKEST: Color = Color::from_rgb(0.094, 0.094, 0.094); // ~#181818
+pub const BG_DARK: Color = Color::from_rgb(0.118, 0.118, 0.118); // ~#1e1e1e
+pub const BG_PANEL: Color = Color::from_rgb(0.137, 0.137, 0.137); // ~#232323
+pub const BG_TOOLBAR: Color = Color::from_rgb(0.153, 0.153, 0.153); // ~#272727
 pub const BG_HOVER: Color = Color::from_rgb(0.200, 0.200, 0.200);
-pub const BG_ACTIVE: Color = Color::from_rgb(0.227, 0.227, 0.227);
+pub const BG_ACTIVE: Color = Color::from_rgb(0.235, 0.235, 0.235);
 
-pub const BORDER_PANEL: Color = Color::from_rgb(0.184, 0.184, 0.184);
-pub const BORDER_STRONG: Color = Color::from_rgb(0.251, 0.251, 0.251);
+pub const BORDER_PANEL: Color = Color::from_rgb(0.180, 0.180, 0.180);
+pub const BORDER_STRONG: Color = Color::from_rgb(0.110, 0.110, 0.110); // hairline separators
 
-pub const ACCENT_BLUE: Color = Color::from_rgb(0.204, 0.471, 0.965);
-pub const ACCENT_BLUE_HOVER: Color = Color::from_rgb(0.126, 0.376, 0.816);
-pub const ACCENT_BLUE_ACTIVE: Color = Color::from_rgb(0.102, 0.310, 0.710);
+// ProPresenter selection accent (electric orange).
+pub const ACCENT_ORANGE: Color = Color::from_rgb(0.941, 0.216, 0.031); // ~#f03708
+pub const ACCENT_ORANGE_HOVER: Color = Color::from_rgb(1.000, 0.420, 0.200);
+pub const ACCENT_ORANGE_ACTIVE: Color = Color::from_rgb(0.800, 0.180, 0.020);
+// Legacy blue kept for compatibility with existing call sites.
+pub const ACCENT_BLUE: Color = ACCENT_ORANGE;
+pub const ACCENT_BLUE_HOVER: Color = ACCENT_ORANGE_HOVER;
+pub const ACCENT_BLUE_ACTIVE: Color = ACCENT_ORANGE_ACTIVE;
 
 pub const LIVE_GREEN: Color = Color::from_rgb(0.204, 0.780, 0.349);
 pub const DANGER_RED: Color = Color::from_rgb(1.000, 0.271, 0.227);
 pub const WARNING_AMBER: Color = Color::from_rgb(1.000, 0.624, 0.039);
+pub const LINK_YELLOW: Color = Color::from_rgb(1.000, 0.835, 0.000);
 
-pub const TEXT_PRIMARY: Color = Color::from_rgb(0.878, 0.878, 0.878);
-pub const TEXT_SECONDARY: Color = Color::from_rgb(0.600, 0.600, 0.600);
-pub const TEXT_MUTED: Color = Color::from_rgb(0.400, 0.400, 0.400);
+pub const TEXT_PRIMARY: Color = Color::from_rgb(0.886, 0.886, 0.886);
+pub const TEXT_SECONDARY: Color = Color::from_rgb(0.620, 0.620, 0.620);
+pub const TEXT_MUTED: Color = Color::from_rgb(0.420, 0.420, 0.420);
 
 pub const OVERLAY: Color = Color::from_rgba(0.0, 0.0, 0.0, 0.78);
 
@@ -99,9 +106,9 @@ pub fn slide_thumbnail_style(
         let border_color = if live {
             LIVE_GREEN
         } else if selected {
-            ACCENT_BLUE
+            ACCENT_ORANGE
         } else {
-            BORDER_STRONG
+            BORDER_PANEL
         };
         container::Style {
             border: Border {
@@ -169,13 +176,26 @@ pub fn section_header_style(_theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Compact uppercase section title used as a ProPresenter-style rail header.
+pub fn section_title_style(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(BG_DARKEST)),
+        border: Border {
+            color: BORDER_STRONG,
+            width: 0.0,
+            radius: 0.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
 pub fn primary_button(theme: &iced::Theme, status: button::Status) -> button::Style {
     let base = button::primary(theme, status);
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => ACCENT_BLUE_HOVER,
-            button::Status::Pressed => ACCENT_BLUE_ACTIVE,
-            _ => ACCENT_BLUE,
+            button::Status::Hovered => ACCENT_ORANGE_HOVER,
+            button::Status::Pressed => ACCENT_ORANGE_ACTIVE,
+            _ => ACCENT_ORANGE,
         })),
         text_color: Color::WHITE,
         border: Border {
@@ -185,6 +205,20 @@ pub fn primary_button(theme: &iced::Theme, status: button::Status) -> button::St
         },
         ..base
     }
+}
+
+/// Compact square icon button used in the ProPresenter-style top toolbar (~30px).
+pub fn toolbar_icon_button(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let mut s = ghost_button(theme, status);
+    s.border = Border {
+        radius: 4.0.into(),
+        width: 1.0,
+        color: match status {
+            button::Status::Hovered => BORDER_PANEL,
+            _ => TRANSPARENT,
+        },
+    };
+    s
 }
 
 pub fn secondary_button(theme: &iced::Theme, status: button::Status) -> button::Style {

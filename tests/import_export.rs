@@ -1,7 +1,7 @@
-use openpresenter::import::{openlyrics, opp};
-use openpresenter::slides::{
+use openpresenter::domain::{
     Background, Color, Presentation, Slide, SlideContent, Song, TextStyle, Transition, Verse,
 };
+use openpresenter::import::{openlyrics, opp};
 use tempfile::tempdir;
 
 #[test]
@@ -66,13 +66,14 @@ fn sample_presentation() -> Presentation {
             },
             background: Background::Solid(Color::black()),
             transition: Transition::Cut,
-            group_label: if i == 0 {
+            group: if i == 0 {
                 Some("Intro".to_string())
             } else {
                 None
             },
             notes: None,
             layers: Vec::new(),
+            cues: Vec::new(),
         });
     }
     p
@@ -113,6 +114,6 @@ fn opp_roundtrip_preserves_group_labels() {
     opp::export(&original, &opp_path).expect("export");
     let imported = opp::import(&opp_path, &media_dir).expect("import");
 
-    assert_eq!(imported.slides[0].group_label, Some("Intro".to_string()));
-    assert!(imported.slides[1].group_label.is_none());
+    assert_eq!(imported.slides[0].group, Some("Intro".to_string()));
+    assert!(imported.slides[1].group.is_none());
 }

@@ -1,13 +1,14 @@
-use crate::slides::{
-    Background, Color as SlideColor, ImageFit, LayerContent, ShapeType, Slide, SlideContent,
+use crate::domain::{
+    Background, Color as SlideColor, ImageFit, ObjectContent, ShapeType, Slide, SlideContent,
     SlideTheme, TextAlignment, TextTransform, Transition,
 };
 use crate::ui::components::{
     color_channel_slider, color_swatch_btn, compact_toggle_btn, option_btn, section_label, tab_bar,
-    tab_btn, toggle_btn,
+    tab_btn,
 };
 use crate::ui::messages::{InspectorTab, Message};
 use crate::ui::theme;
+use crate::ui::{layers, slides, typography};
 use iced::{
     Alignment, Color, Element, Length,
     widget::{
@@ -17,7 +18,7 @@ use iced::{
 };
 use iced_font_awesome::fa_icon_solid;
 
-pub const PANEL_WIDTH: u16 = 290;
+pub const PANEL_WIDTH: u16 = 320;
 
 #[derive(Clone, Default)]
 pub struct LayerPanelState {
@@ -45,7 +46,6 @@ pub fn inspector_panel<'a>(
     editing_transition_dur: &'a str,
     editing_group_label: &'a str,
     editing_notes: &'a str,
-    selected_index: Option<usize>,
     themes: &'a [SlideTheme],
     selected_theme_id: Option<&'a str>,
     new_theme_name: &'a str,
@@ -65,22 +65,22 @@ pub fn inspector_panel<'a>(
 
     let tab_bar_el = tab_bar(vec![
         tab_btn(
+            "Shape",
+            tab == InspectorTab::Layers,
+            Message::SwitchInspectorTab(InspectorTab::Layers),
+        ),
+        tab_btn(
             "Text",
             tab == InspectorTab::Text,
             Message::SwitchInspectorTab(InspectorTab::Text),
         ),
         tab_btn(
-            "Slide",
+            "Build",
             tab == InspectorTab::Slide,
             Message::SwitchInspectorTab(InspectorTab::Slide),
         ),
         tab_btn(
-            "Layers",
-            tab == InspectorTab::Layers,
-            Message::SwitchInspectorTab(InspectorTab::Layers),
-        ),
-        tab_btn(
-            "Themes",
+            "Theme",
             tab == InspectorTab::Theme,
             Message::SwitchInspectorTab(InspectorTab::Theme),
         ),
@@ -104,7 +104,6 @@ pub fn inspector_panel<'a>(
             editing_transition_dur,
             editing_group_label,
             editing_notes,
-            selected_index,
         ),
         InspectorTab::Theme => themes_tab(themes, selected_theme_id, new_theme_name, slide),
         InspectorTab::Layers => layers_tab(slide, layer_state),
@@ -115,7 +114,7 @@ pub fn inspector_panel<'a>(
         scrollable(panel_content).height(Length::Fill),
         container(
             button(text("Save Slide").size(13))
-                .on_press(Message::SaveSlide)
+                .on_press(Message::from(slides::Message::SaveSlide))
                 .width(Length::Fill)
                 .padding([9, 0])
                 .style(theme::primary_button),
@@ -174,31 +173,82 @@ fn text_content_tab<'a>(
     editing_text: &'a str,
     editing_font_size: &'a str,
 ) -> Column<'a, Message> {
-    let mut panel = Column::new().padding([14, 14]).spacing(12);
+    let mut panel = Column::new().padding([10, 10]).spacing(10);
 
-    panel = panel.push(section_label("CONTENT"));
-    panel = panel.push(
-        text_input("Enter slide text…", editing_text)
-            .on_input(Message::SlideTextChanged)
-            .padding([9, 10])
-            .size(13),
-    );
-
-    if let crate::slides::SlideContent::Text { style, .. } = &slide.content {
-        panel = panel.push(section_label("TYPOGRAPHY"));
+    if let crate::domain::SlideContent::Text { style, .. } = &slide.content {
+        let divider = || {
+            container(Space::new().width(Length::Fill).height(1))
+                .style(|_: &iced::Theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(theme::BORDER_PANEL)),
+                    ..Default::default()
+                })
+                .padding([3, 0])
+        };
 
         panel = panel.push(
             row![
-                text("Size").size(12).color(theme::TEXT_SECONDARY).width(44),
-                text_input("72", editing_font_size)
-                    .on_input(Message::SlideFontSizeChanged)
-                    .width(64)
+                button(text("Copy Style").size(12))
+                    .on_press(Message::Noop)
+                    .width(Length::FillPortion(1))
+                    .padding([7, 10])
+                    .style(theme::secondary_button),
+                button(text("Paste Style").size(12).color(theme::TEXT_MUTED))
+                    .on_press(Message::Noop)
+                    .width(Length::FillPortion(1))
+                    .padding([7, 10])
+                    .style(theme::ghost_button),
+            ]
+            .spacing(8),
+        );
+
+        panel = panel.push(divider());
+
+        panel = panel.push(faux_dropdown_btn(style.font_family.as_str(), Message::Noop));
+
+        panel = panel.push(
+            row![
+                faux_dropdown_btn(if style.bold { "Bold" } else { "Regular" }, Message::Noop),
+                text_input("70", editing_font_size)
+                    .on_input(|v| Message::from(slides::Message::SlideFontSizeChanged(v)))
+                    .width(92)
                     .padding([7, 8])
                     .size(12),
+                button(fa_icon_solid("up-down").size(11.0_f32))
+                    .on_press(Message::Noop)
+                    .padding([6, 8])
+                    .style(theme::secondary_button),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        );
+
+        panel = panel.push(
+            row![
+                icon_toggle_btn(
+                    "bold",
+                    style.bold,
+                    Message::from(slides::Message::SlideBoldToggled(!style.bold))
+                ),
+                icon_toggle_btn(
+                    "italic",
+                    style.italic,
+                    Message::from(slides::Message::SlideItalicToggled(!style.italic))
+                ),
+                icon_toggle_btn(
+                    "underline",
+                    style.outline,
+                    Message::from(slides::Message::SlideOutlineToggled(!style.outline))
+                ),
+                icon_toggle_btn(
+                    "strikethrough",
+                    style.shadow,
+                    Message::from(slides::Message::SlideShadowToggled(!style.shadow))
+                ),
                 Space::new().width(Length::Fill),
-                align_btn("L", TextAlignment::Left, &style.alignment),
-                align_btn("C", TextAlignment::Center, &style.alignment),
-                align_btn("R", TextAlignment::Right, &style.alignment),
+                button(fa_icon_solid("gear").size(11.0_f32))
+                    .on_press(Message::Noop)
+                    .padding([6, 10])
+                    .style(theme::secondary_button),
             ]
             .spacing(4)
             .align_y(Alignment::Center),
@@ -206,63 +256,172 @@ fn text_content_tab<'a>(
 
         panel = panel.push(
             row![
-                toggle_btn("B", style.bold, Message::SlideBoldToggled(!style.bold)),
-                toggle_btn(
-                    "I",
-                    style.italic,
-                    Message::SlideItalicToggled(!style.italic)
-                ),
-            ]
-            .spacing(4),
-        );
-
-        panel = panel.push(section_label("TEXT COLOR"));
-        panel = panel.push(color_swatch_row_text(&style.color));
-
-        panel = panel.push(section_label("EFFECTS"));
-        panel = panel.push(
-            row![
-                checkbox(style.shadow).on_toggle(Message::SlideShadowToggled),
-                text("Shadow").size(12).color(theme::TEXT_SECONDARY),
-                Space::new().width(24),
-                checkbox(style.outline).on_toggle(Message::SlideOutlineToggled),
-                text("Outline").size(12).color(theme::TEXT_SECONDARY),
+                text("Capitalization").size(12).color(theme::TEXT_SECONDARY),
+                Space::new().width(Length::Fill),
+                faux_dropdown_btn("All Caps", Message::Noop),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
         );
 
-        panel = panel.push(section_label("POSITION"));
-        let presets: [(f32, f32, &str); 9] = [
-            (0.1, 0.15, "TL"),
-            (0.5, 0.15, "T"),
-            (0.9, 0.15, "TR"),
-            (0.1, 0.5, "L"),
-            (0.5, 0.5, "C"),
-            (0.9, 0.5, "R"),
-            (0.1, 0.85, "BL"),
-            (0.5, 0.85, "B"),
-            (0.9, 0.85, "BR"),
-        ];
-        for row_idx in 0..3 {
-            let mut preset_row = iced::widget::Row::new().spacing(4);
-            for col_idx in 0..3 {
-                let (px, py, icon) = presets[row_idx * 3 + col_idx];
-                let is_active =
-                    (style.position_x - px).abs() < 0.05 && (style.position_y - py).abs() < 0.05;
-                preset_row = preset_row.push(
-                    button(text(icon).size(13))
-                        .on_press(Message::SlidePositionPreset(px, py))
-                        .padding([6, 8])
-                        .style(if is_active {
-                            theme::primary_button
-                        } else {
-                            theme::secondary_button
-                        }),
-                );
-            }
-            panel = panel.push(preset_row);
-        }
+        panel = panel.push(divider());
+
+        let current_color = Color::from_rgba8(
+            style.color.r,
+            style.color.g,
+            style.color.b,
+            style.color.a as f32 / 255.0,
+        );
+        panel = panel.push(
+            row![
+                text("Text Color").size(13).color(theme::TEXT_PRIMARY),
+                Space::new().width(Length::Fill),
+                button(Space::new().width(94).height(22))
+                    .on_press(Message::Noop)
+                    .style(theme::swatch_button(current_color, false)),
+                button(fa_icon_solid("palette").size(13.0_f32))
+                    .on_press(Message::Noop)
+                    .padding([5, 8])
+                    .style(theme::secondary_button),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        );
+
+        panel = panel.push(divider());
+
+        panel = panel.push(
+            row![
+                text("Scaling")
+                    .size(12)
+                    .color(theme::TEXT_SECONDARY)
+                    .width(100),
+                faux_dropdown_btn("None", Message::Noop),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+
+        panel = panel.push(
+            row![
+                text("Line Transform")
+                    .size(12)
+                    .color(theme::TEXT_SECONDARY)
+                    .width(100),
+                faux_dropdown_btn("None", Message::Noop),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+
+        panel = panel.push(divider());
+
+        panel = panel.push(
+            row![
+                align_icon_btn("align-left", TextAlignment::Left, &style.alignment),
+                align_icon_btn("align-center", TextAlignment::Center, &style.alignment),
+                align_icon_btn("align-right", TextAlignment::Right, &style.alignment),
+                button(
+                    fa_icon_solid("align-justify")
+                        .size(11.0_f32)
+                        .color(theme::TEXT_SECONDARY)
+                )
+                .on_press(Message::Noop)
+                .padding([6, 16])
+                .style(theme::secondary_button),
+            ]
+            .spacing(4),
+        );
+
+        let top_active = style.position_y <= 0.30;
+        let middle_active = (style.position_y - 0.5).abs() < 0.20;
+        let bottom_active = style.position_y >= 0.70;
+        panel = panel.push(
+            row![
+                icon_toggle_btn(
+                    "arrow-up",
+                    top_active,
+                    Message::from(slides::Message::SlidePositionPreset(style.position_x, 0.15))
+                ),
+                icon_toggle_btn(
+                    "up-down",
+                    middle_active,
+                    Message::from(slides::Message::SlidePositionPreset(style.position_x, 0.5))
+                ),
+                icon_toggle_btn(
+                    "arrow-down",
+                    bottom_active,
+                    Message::from(slides::Message::SlidePositionPreset(style.position_x, 0.85))
+                ),
+            ]
+            .spacing(4),
+        );
+
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(style.outline)
+                    .on_toggle(|v| Message::from(slides::Message::SlideOutlineToggled(v))),
+                text("Stroke").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(style.shadow)
+                    .on_toggle(|v| Message::from(slides::Message::SlideShadowToggled(v))),
+                text("Shadow").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(false).on_toggle(|_| Message::Noop),
+                text("Lines Only").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(false).on_toggle(|_| Message::Noop),
+                text("Scrolling").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(false).on_toggle(|_| Message::Noop),
+                text("List").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(divider());
+        panel = panel.push(
+            row![
+                checkbox(false).on_toggle(|_| Message::Noop),
+                text("Linked Text").size(12).color(theme::TEXT_PRIMARY),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+        panel = panel.push(Space::new().height(300));
+    } else {
+        panel = panel.push(section_label("CONTENT"));
+        panel = panel.push(
+            text_input("Enter slide text…", editing_text)
+                .on_input(|v| Message::from(slides::Message::SlideTextChanged(v)))
+                .padding([9, 10])
+                .size(13),
+        );
     }
 
     panel
@@ -273,7 +432,6 @@ fn slide_tab<'a>(
     editing_transition_dur: &'a str,
     editing_group_label: &'a str,
     editing_notes: &'a str,
-    selected_index: Option<usize>,
 ) -> Column<'a, Message> {
     let mut panel = Column::new().padding([14, 14]).spacing(12);
 
@@ -283,9 +441,21 @@ fn slide_tab<'a>(
     let is_video = matches!(slide.content, SlideContent::Video { .. });
     panel = panel.push(
         row![
-            content_type_btn("Text", Message::ConvertSlideToText, is_text),
-            content_type_btn("Image", Message::ConvertSlideToImage, is_image),
-            content_type_btn("Video", Message::ConvertSlideToVideo, is_video),
+            content_type_btn(
+                "Text",
+                Message::from(slides::Message::ConvertSlideToText),
+                is_text
+            ),
+            content_type_btn(
+                "Image",
+                Message::from(slides::Message::ConvertSlideToImage),
+                is_image
+            ),
+            content_type_btn(
+                "Video",
+                Message::from(slides::Message::ConvertSlideToVideo),
+                is_video
+            ),
         ]
         .spacing(4),
     );
@@ -395,7 +565,7 @@ fn slide_tab<'a>(
                     .color(theme::TEXT_SECONDARY)
                     .width(90),
                 text_input("500", editing_transition_dur)
-                    .on_input(Message::TransitionDurationChanged)
+                    .on_input(|v| Message::from(slides::Message::TransitionDurationChanged(v)))
                     .width(70)
                     .padding([7, 8])
                     .size(12),
@@ -407,28 +577,17 @@ fn slide_tab<'a>(
 
     panel = panel.push(section_label("GROUP LABEL"));
     panel = panel.push(
-        row![
-            text_input("e.g. Verse 1", editing_group_label)
-                .on_input(Message::GroupLabelChanged)
-                .padding([7, 8])
-                .size(12)
-                .width(Length::Fill),
-            button(text("Set").size(11))
-                .on_press(Message::SetSlideGroupLabel(
-                    selected_index.unwrap_or(0),
-                    editing_group_label.to_string(),
-                ))
-                .padding([7, 10])
-                .style(theme::secondary_button),
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center),
+        text_input("e.g. Verse 1", editing_group_label)
+            .on_input(|v| Message::from(slides::Message::GroupLabelChanged(v)))
+            .padding([7, 8])
+            .size(12)
+            .width(Length::Fill),
     );
 
     panel = panel.push(section_label("NOTES"));
     panel = panel.push(
         text_input("Operator notes (shown on stage display)", editing_notes)
-            .on_input(Message::SlideNotesChanged)
+            .on_input(|v| Message::from(slides::Message::SlideNotesChanged(v)))
             .padding([7, 8])
             .size(12)
             .width(Length::Fill),
@@ -439,7 +598,11 @@ fn slide_tab<'a>(
 
 fn speed_btn<'a>(label: &'a str, speed: f64, current_speed: f64) -> Element<'a, Message> {
     let active = (current_speed - speed).abs() < 0.05;
-    option_btn(label, active, Message::VideoSpeedChanged(speed))
+    option_btn(
+        label,
+        active,
+        Message::Video(crate::ui::video::Message::SpeedChanged(speed)),
+    )
 }
 
 fn content_type_btn<'a>(label: &'a str, msg: Message, active: bool) -> Element<'a, Message> {
@@ -465,7 +628,7 @@ fn image_content_tab<'a>(path: &'a str, fit: ImageFit) -> Column<'a, Message> {
                 .color(theme::TEXT_SECONDARY)
                 .width(Length::Fill),
             button(text("Browse…").size(11))
-                .on_press(Message::PickImageFile)
+                .on_press(Message::from(slides::Message::PickImageFile))
                 .padding([6, 12])
                 .style(theme::secondary_button),
         ]
@@ -488,7 +651,11 @@ fn image_content_tab<'a>(path: &'a str, fit: ImageFit) -> Column<'a, Message> {
 }
 
 fn fit_btn<'a>(label: &'a str, this: ImageFit, current: ImageFit) -> Element<'a, Message> {
-    option_btn(label, this == current, Message::SlideImageFitChanged(this))
+    option_btn(
+        label,
+        this == current,
+        Message::from(slides::Message::SlideImageFitChanged(this)),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -521,7 +688,7 @@ fn video_content_tab<'a>(
                 .color(theme::TEXT_SECONDARY)
                 .width(Length::Fill),
             button(text("Browse…").size(11))
-                .on_press(Message::PickVideoFile)
+                .on_press(Message::from(slides::Message::PickVideoFile))
                 .padding([6, 12])
                 .style(theme::secondary_button),
         ]
@@ -534,13 +701,15 @@ fn video_content_tab<'a>(
 
         panel = panel.push(
             row![
-                button(fa_icon_solid(if video_playing { "pause" } else { "play" }).size(12.0))
-                    .on_press(Message::VideoPlayToggled)
+                button(fa_icon_solid(if video_playing { "pause" } else { "play" }).size(12.0_f32))
+                    .on_press(Message::Video(crate::ui::video::Message::PlayToggled))
                     .padding([6, 14])
                     .style(theme::primary_button),
                 Space::new().width(8),
-                button(fa_icon_solid("repeat").size(12.0))
-                    .on_press(Message::VideoLoopToggled(!video_looping))
+                button(fa_icon_solid("repeat").size(12.0_f32))
+                    .on_press(Message::Video(crate::ui::video::Message::LoopToggled(
+                        !video_looping
+                    )))
                     .padding([6, 12])
                     .style(if video_looping {
                         theme::primary_button
@@ -560,9 +729,9 @@ fn video_content_tab<'a>(
                     } else {
                         "volume-high"
                     })
-                    .size(12.0)
+                    .size(12.0_f32)
                 )
-                .on_press(Message::VideoMuteToggled)
+                .on_press(Message::Video(crate::ui::video::Message::MuteToggled))
                 .padding([5, 8])
                 .style(if video_muted {
                     theme::primary_button
@@ -570,9 +739,11 @@ fn video_content_tab<'a>(
                     theme::secondary_button
                 }),
                 Space::new().width(6),
-                slider(0.0..=1.0, video_volume, Message::VideoVolumeChanged)
-                    .step(0.05)
-                    .width(Length::Fill),
+                slider(0.0..=1.0, video_volume, move |v| Message::Video(
+                    crate::ui::video::Message::VolumeChanged(v)
+                ))
+                .step(0.05_f32)
+                .width(Length::Fill),
                 Space::new().width(6),
                 text(format!("{:.0}%", video_volume * 100.0))
                     .size(11)
@@ -586,9 +757,11 @@ fn video_content_tab<'a>(
             let safe_pos = video_position.clamp(0.0, video_duration);
             panel = panel.push(
                 row![
-                    slider(0.0..=video_duration, safe_pos, Message::VideoSeekChanged)
-                        .step(0.5)
-                        .width(Length::Fill),
+                    slider(0.0..=video_duration, safe_pos, move |v| Message::Video(
+                        crate::ui::video::Message::SeekChanged(v)
+                    ))
+                    .step(0.5)
+                    .width(Length::Fill),
                     Space::new().width(6),
                     text(format!(
                         "{:.0}:{:02.0} / {:.0}:{:02.0}",
@@ -644,13 +817,15 @@ fn themes_tab<'a>(
     panel = panel.push(
         row![
             text_input("Theme name…", new_theme_name)
-                .on_input(Message::ThemeNameChanged)
+                .on_input(|v| Message::Themes(crate::ui::themes::Message::NameChanged(v)))
                 .padding([7, 8])
                 .size(12)
                 .width(Length::Fill),
             button(text("Save").size(11))
                 .on_press_maybe(if !new_theme_name.trim().is_empty() && has_text {
-                    Some(Message::SaveSlideAsTheme)
+                    Some(Message::Themes(
+                        crate::ui::themes::Message::SaveSlideAsTheme,
+                    ))
                 } else {
                     None
                 })
@@ -672,11 +847,11 @@ fn themes_tab<'a>(
     panel = panel.push(
         row![
             button(text("Export JSON").size(11))
-                .on_press(Message::ExportThemes)
+                .on_press(Message::Themes(crate::ui::themes::Message::Export))
                 .padding([6, 10])
                 .style(theme::secondary_button),
             button(text("Import JSON").size(11))
-                .on_press(Message::ImportThemes)
+                .on_press(Message::Themes(crate::ui::themes::Message::Import))
                 .padding([6, 10])
                 .style(theme::secondary_button),
         ]
@@ -715,16 +890,21 @@ fn themes_tab<'a>(
                 .width(Length::Fill);
 
             let apply_btn = button(text("Apply").size(10))
-                .on_press(Message::ApplyTheme(theme_item.id.clone()))
+                .on_press(Message::Themes(crate::ui::themes::Message::Apply(
+                    theme_item.id.clone(),
+                )))
                 .padding([4, 8])
                 .style(theme::primary_button);
 
-            let delete_btn = button(fa_icon_solid("xmark").size(13.0))
-                .on_press(Message::DeleteTheme(theme_item.id.clone()))
+            let delete_btn = button(fa_icon_solid("xmark").size(13.0_f32))
+                .on_press(Message::Themes(crate::ui::themes::Message::Delete(
+                    theme_item.id.clone(),
+                )))
                 .padding([3, 7])
                 .style(theme::danger_button);
 
-            let select_msg = Message::SelectTheme(theme_item.id.clone());
+            let select_msg =
+                Message::Themes(crate::ui::themes::Message::Select(theme_item.id.clone()));
             let row = button(
                 row![swatch, name_label, apply_btn, delete_btn]
                     .spacing(6)
@@ -745,43 +925,68 @@ fn themes_tab<'a>(
     panel
 }
 
-fn align_btn<'a>(
-    label: &'a str,
+fn faux_dropdown_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+    button(
+        row![
+            text(label).size(12).color(theme::TEXT_PRIMARY),
+            Space::new().width(Length::Fill),
+            fa_icon_solid("chevron-down")
+                .size(10.0_f32)
+                .color(theme::TEXT_SECONDARY),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .on_press(msg)
+    .width(Length::Fill)
+    .padding([6, 10])
+    .style(theme::secondary_button)
+    .into()
+}
+
+fn icon_toggle_btn<'a>(icon: &'a str, active: bool, msg: Message) -> Element<'a, Message> {
+    button(fa_icon_solid(icon).size(11.0_f32).color(if active {
+        Color::WHITE
+    } else {
+        theme::TEXT_SECONDARY
+    }))
+    .on_press(msg)
+    .padding([6, 16])
+    .style(if active {
+        theme::primary_button
+    } else {
+        theme::secondary_button
+    })
+    .into()
+}
+
+fn align_icon_btn<'a>(
+    icon: &'a str,
     this: TextAlignment,
     current: &TextAlignment,
 ) -> Element<'a, Message> {
     let active = std::mem::discriminant(&this) == std::mem::discriminant(current);
-    option_btn(label, active, Message::SlideAlignmentChanged(this))
+    let color = if active {
+        Color::WHITE
+    } else {
+        theme::TEXT_SECONDARY
+    };
+    button(fa_icon_solid(icon).size(11.0_f32).color(color))
+        .on_press(Message::from(slides::Message::SlideAlignmentChanged(this)))
+        .padding([5, 10])
+        .style(if active {
+            theme::primary_button
+        } else {
+            theme::secondary_button
+        })
+        .into()
 }
 
 fn transition_btn<'a>(label: &'a str, t: Transition, active: bool) -> Element<'a, Message> {
-    option_btn(label, active, Message::SlideTransitionChanged(t))
-}
-
-fn color_swatch_row_text<'a>(current: &'a SlideColor) -> Element<'a, Message> {
-    let swatches = vec![
-        (Color::WHITE, SlideColor::white(), "White"),
-        (Color::BLACK, SlideColor::black(), "Black"),
-        (Color::from_rgb(0.9, 0.2, 0.2), SlideColor::red(), "Red"),
-        (Color::from_rgb(0.2, 0.4, 1.0), SlideColor::blue(), "Blue"),
-        (
-            Color::from_rgb(1.0, 0.85, 0.1),
-            SlideColor::yellow(),
-            "Yellow",
-        ),
-    ];
-
-    let mut r = row![].spacing(6);
-    for (iced_color, slide_color, _name) in swatches {
-        let selected =
-            current.r == slide_color.r && current.g == slide_color.g && current.b == slide_color.b;
-        r = r.push(color_swatch_btn(
-            iced_color,
-            selected,
-            Message::SlideColorChanged(slide_color),
-        ));
-    }
-    r.into()
+    option_btn(
+        label,
+        active,
+        Message::from(slides::Message::SlideTransitionChanged(t)),
+    )
 }
 
 fn color_swatch_row_bg<'a>(current: &'a Background) -> Element<'a, Message> {
@@ -839,7 +1044,9 @@ fn color_swatch_row_bg<'a>(current: &'a Background) -> Element<'a, Message> {
         r = r.push(color_swatch_btn(
             iced_color,
             selected,
-            Message::SlideBackgroundChanged(Background::Solid(slide_color)),
+            Message::from(slides::Message::SlideBackgroundChanged(Background::Solid(
+                slide_color,
+            ))),
         ));
     }
     r.into()
@@ -851,15 +1058,19 @@ fn layers_tab<'a>(slide: &'a Slide, state: &LayerPanelState) -> Column<'a, Messa
     let add_row = container(
         row![
             button(text("+ Text").size(11))
-                .on_press(Message::AddTextLayer)
+                .on_press(Message::from(layers::Message::AddTextLayer))
                 .style(theme::ghost_button)
                 .padding([4, 8]),
             button(text("+ Rect").size(11))
-                .on_press(Message::AddShapeLayer(ShapeType::Rectangle))
+                .on_press(Message::from(layers::Message::AddShapeLayer(
+                    ShapeType::Rectangle
+                )))
                 .style(theme::ghost_button)
                 .padding([4, 8]),
             button(text("+ Ellipse").size(11))
-                .on_press(Message::AddShapeLayer(ShapeType::Ellipse))
+                .on_press(Message::from(layers::Message::AddShapeLayer(
+                    ShapeType::Ellipse
+                )))
                 .style(theme::ghost_button)
                 .padding([4, 8]),
         ]
@@ -882,19 +1093,18 @@ fn layers_tab<'a>(slide: &'a Slide, state: &LayerPanelState) -> Column<'a, Messa
             .padding([16, 14]),
         );
     } else {
-        let mut sorted: Vec<(usize, &crate::slides::SlideLayer)> =
-            layers.iter().enumerate().collect();
-        sorted.sort_by(|a, b| b.1.z_order.cmp(&a.1.z_order));
+        let mut sorted: Vec<(usize, &crate::domain::Object)> = layers.iter().enumerate().collect();
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1.z_order));
 
         for (orig_idx, layer) in sorted {
             let is_sel = state.selected_layer_index == Some(orig_idx);
             let vis_el: Element<'_, Message> = if layer.visible {
-                fa_icon_solid("eye").size(11.0).into()
+                fa_icon_solid("eye").size(11.0_f32).into()
             } else {
                 Space::new().width(11).into()
             };
             let lock_el: Element<'_, Message> = if layer.locked {
-                fa_icon_solid("lock").size(11.0).into()
+                fa_icon_solid("lock").size(11.0_f32).into()
             } else {
                 Space::new().width(11).into()
             };
@@ -910,23 +1120,27 @@ fn layers_tab<'a>(slide: &'a Slide, state: &LayerPanelState) -> Column<'a, Messa
                     lock_el,
                     text(layer.display_name()).size(12).color(name_color),
                     Space::new().width(Length::Fill),
-                    button(fa_icon_solid("arrow-up").size(10.0))
-                        .on_press(Message::MoveSelectedLayerUp)
+                    button(fa_icon_solid("arrow-up").size(10.0_f32))
+                        .on_press(Message::from(layers::Message::MoveSelectedLayerUp))
                         .style(theme::ghost_button)
                         .padding([2, 4]),
-                    button(fa_icon_solid("arrow-down").size(10.0))
-                        .on_press(Message::MoveSelectedLayerDown)
+                    button(fa_icon_solid("arrow-down").size(10.0_f32))
+                        .on_press(Message::from(layers::Message::MoveSelectedLayerDown))
                         .style(theme::ghost_button)
                         .padding([2, 4]),
-                    button(fa_icon_solid("xmark").size(13.0).color(theme::DANGER_RED))
-                        .on_press(Message::DeleteSelectedLayer)
-                        .style(theme::ghost_button)
-                        .padding([2, 6]),
+                    button(
+                        fa_icon_solid("xmark")
+                            .size(13.0_f32)
+                            .color(theme::DANGER_RED)
+                    )
+                    .on_press(Message::from(layers::Message::DeleteSelectedLayer))
+                    .style(theme::ghost_button)
+                    .padding([2, 6]),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center),
             )
-            .on_press(Message::SelectLayer(Some(orig_idx)))
+            .on_press(Message::from(layers::Message::SelectLayer(Some(orig_idx))))
             .width(Length::Fill)
             .style(if is_sel {
                 theme::primary_button
@@ -948,7 +1162,7 @@ fn layers_tab<'a>(slide: &'a Slide, state: &LayerPanelState) -> Column<'a, Messa
 }
 
 fn layer_props_panel<'a>(
-    layer: &'a crate::slides::SlideLayer,
+    layer: &'a crate::domain::Object,
     state: &LayerPanelState,
 ) -> Column<'a, Message> {
     let mut col = Column::new().spacing(8).padding([10, 14]);
@@ -972,7 +1186,9 @@ fn layer_props_panel<'a>(
                 })
                 .size(11)
             )
-            .on_press(Message::ToggleSelectedLayerVisibility)
+            .on_press(Message::from(
+                layers::Message::ToggleSelectedLayerVisibility
+            ))
             .style(if layer.visible {
                 theme::primary_button
             } else {
@@ -988,7 +1204,7 @@ fn layer_props_panel<'a>(
                 })
                 .size(11)
             )
-            .on_press(Message::ToggleSelectedLayerLock)
+            .on_press(Message::from(layers::Message::ToggleSelectedLayerLock))
             .style(if layer.locked {
                 theme::primary_button
             } else {
@@ -1002,12 +1218,10 @@ fn layer_props_panel<'a>(
     col = col.push(prop_label("Opacity"));
     col = col.push(
         row![
-            slider(
-                0.0..=1.0,
-                layer.opacity,
-                Message::SelectedLayerOpacityChanged
-            )
-            .step(0.01)
+            slider(0.0..=1.0, layer.opacity, |v| Message::from(
+                layers::Message::SelectedLayerOpacityChanged(v)
+            ))
+            .step(0.01_f32)
             .width(Length::Fill),
             text(format!("{:.0}%", layer.opacity * 100.0))
                 .size(11)
@@ -1022,11 +1236,11 @@ fn layer_props_panel<'a>(
     col = col.push(
         row![
             text_input("X", state.editing_pos_x.as_str())
-                .on_input(Message::SelectedLayerPositionXChanged)
+                .on_input(|v| Message::from(layers::Message::SelectedLayerPositionXChanged(v)))
                 .size(12)
                 .padding([5, 6]),
             text_input("Y", state.editing_pos_y.as_str())
-                .on_input(Message::SelectedLayerPositionYChanged)
+                .on_input(|v| Message::from(layers::Message::SelectedLayerPositionYChanged(v)))
                 .size(12)
                 .padding([5, 6]),
         ]
@@ -1036,11 +1250,11 @@ fn layer_props_panel<'a>(
     col = col.push(
         row![
             text_input("W", state.editing_width.as_str())
-                .on_input(Message::SelectedLayerWidthChanged)
+                .on_input(|v| Message::from(layers::Message::SelectedLayerWidthChanged(v)))
                 .size(12)
                 .padding([5, 6]),
             text_input("H", state.editing_height.as_str())
-                .on_input(Message::SelectedLayerHeightChanged)
+                .on_input(|v| Message::from(layers::Message::SelectedLayerHeightChanged(v)))
                 .size(12)
                 .padding([5, 6]),
         ]
@@ -1048,7 +1262,7 @@ fn layer_props_panel<'a>(
     );
 
     match &layer.content {
-        LayerContent::Text {
+        ObjectContent::Text {
             text: content,
             style,
             ..
@@ -1056,7 +1270,7 @@ fn layer_props_panel<'a>(
             col = col.push(prop_label("Text"));
             col = col.push(
                 text_input("Layer text…", state.editing_text.as_str())
-                    .on_input(Message::SelectedLayerTextChanged)
+                    .on_input(|v| Message::from(layers::Message::SelectedLayerTextChanged(v)))
                     .size(12)
                     .padding([5, 6])
                     .width(Length::Fill),
@@ -1064,27 +1278,21 @@ fn layer_props_panel<'a>(
             col = col.push(prop_label("Font Size"));
             col = col.push(
                 text_input("72", state.editing_font_size.as_str())
-                    .on_input(Message::SelectedLayerFontSizeChanged)
+                    .on_input(|v| Message::from(layers::Message::SelectedLayerFontSizeChanged(v)))
                     .size(12)
                     .padding([5, 6])
                     .width(80),
             );
             col = col.push(prop_label("Colour  (R / G / B)"));
-            col = col.push(color_channel_slider(
-                "R",
-                style.color.r,
-                Message::SelectedLayerTextColorR,
-            ));
-            col = col.push(color_channel_slider(
-                "G",
-                style.color.g,
-                Message::SelectedLayerTextColorG,
-            ));
-            col = col.push(color_channel_slider(
-                "B",
-                style.color.b,
-                Message::SelectedLayerTextColorB,
-            ));
+            col = col.push(color_channel_slider("R", style.color.r, |v| {
+                Message::from(layers::Message::SelectedLayerTextColorR(v))
+            }));
+            col = col.push(color_channel_slider("G", style.color.g, |v| {
+                Message::from(layers::Message::SelectedLayerTextColorG(v))
+            }));
+            col = col.push(color_channel_slider("B", style.color.b, |v| {
+                Message::from(layers::Message::SelectedLayerTextColorB(v))
+            }));
             col = col.push(
                 row![
                     text("Hex").size(11).color(theme::TEXT_MUTED).width(28),
@@ -1095,7 +1303,7 @@ fn layer_props_panel<'a>(
                             style.color.r, style.color.g, style.color.b
                         ),
                     )
-                    .on_input(Message::SelectedLayerTextColorHex)
+                    .on_input(|v| Message::from(typography::Message::SelectedLayerTextColorHex(v)))
                     .size(12)
                     .padding([5, 6])
                     .width(Length::Fill),
@@ -1106,21 +1314,25 @@ fn layer_props_panel<'a>(
             col = col.push(prop_label("Style"));
             col = col.push(
                 row![
-                    layer_toggle_btn("Bold", style.bold, Message::SelectedLayerTextBoldToggled),
+                    layer_toggle_btn(
+                        "Bold",
+                        style.bold,
+                        Message::from(layers::Message::SelectedLayerTextBoldToggled)
+                    ),
                     layer_toggle_btn(
                         "Italic",
                         style.italic,
-                        Message::SelectedLayerTextItalicToggled
+                        Message::from(layers::Message::SelectedLayerTextItalicToggled)
                     ),
                     layer_toggle_btn(
                         "Shadow",
                         style.shadow,
-                        Message::SelectedLayerTextShadowToggled
+                        Message::from(layers::Message::SelectedLayerTextShadowToggled)
                     ),
                     layer_toggle_btn(
                         "Outline",
                         style.outline,
-                        Message::SelectedLayerTextOutlineToggled
+                        Message::from(layers::Message::SelectedLayerTextOutlineToggled)
                     ),
                 ]
                 .spacing(4)
@@ -1129,9 +1341,13 @@ fn layer_props_panel<'a>(
             col = col.push(prop_label("Font Family"));
             col = col.push(
                 text_input("Arial", state.editing_font_family.as_str())
-                    .on_input(Message::SelectedLayerFontFamilyChanged)
-                    .on_submit(Message::SelectedLayerFontFamilyChanged(
-                        state.editing_font_family.clone(),
+                    .on_input(|v| {
+                        Message::from(typography::Message::SelectedLayerFontFamilyChanged(v))
+                    })
+                    .on_submit(Message::from(
+                        typography::Message::SelectedLayerFontFamilyChanged(
+                            state.editing_font_family.clone(),
+                        ),
                     ))
                     .size(12)
                     .padding([5, 6])
@@ -1140,20 +1356,28 @@ fn layer_props_panel<'a>(
             col = col.push(
                 row![
                     button(text("Arial").size(10))
-                        .on_press(Message::SelectedLayerFontFamilyChanged("Arial".into()))
+                        .on_press(Message::from(
+                            typography::Message::SelectedLayerFontFamilyChanged("Arial".into())
+                        ))
                         .style(theme::tab_inactive_button)
                         .padding([3, 6]),
                     button(text("Georgia").size(10))
-                        .on_press(Message::SelectedLayerFontFamilyChanged("Georgia".into()))
+                        .on_press(Message::from(
+                            typography::Message::SelectedLayerFontFamilyChanged("Georgia".into())
+                        ))
                         .style(theme::tab_inactive_button)
                         .padding([3, 6]),
                     button(text("Impact").size(10))
-                        .on_press(Message::SelectedLayerFontFamilyChanged("Impact".into()))
+                        .on_press(Message::from(
+                            typography::Message::SelectedLayerFontFamilyChanged("Impact".into())
+                        ))
                         .style(theme::tab_inactive_button)
                         .padding([3, 6]),
                     button(text("Courier").size(10))
-                        .on_press(Message::SelectedLayerFontFamilyChanged(
-                            "Courier New".into(),
+                        .on_press(Message::from(
+                            typography::Message::SelectedLayerFontFamilyChanged(
+                                "Courier New".into(),
+                            )
                         ))
                         .style(theme::tab_inactive_button)
                         .padding([3, 6]),
@@ -1165,13 +1389,17 @@ fn layer_props_panel<'a>(
                 row![
                     text("LH").size(11).color(theme::TEXT_MUTED).width(20),
                     text_input("1.2", state.editing_line_height.as_str())
-                        .on_input(Message::SelectedLayerLineHeightChanged)
+                        .on_input(|v| Message::from(
+                            typography::Message::SelectedLayerLineHeightChanged(v)
+                        ))
                         .size(12)
                         .padding([5, 6])
                         .width(64),
                     text("LS").size(11).color(theme::TEXT_MUTED).width(20),
                     text_input("0", state.editing_letter_spacing.as_str())
-                        .on_input(Message::SelectedLayerLetterSpacingChanged)
+                        .on_input(|v| Message::from(
+                            typography::Message::SelectedLayerLetterSpacingChanged(v)
+                        ))
                         .size(12)
                         .padding([5, 6])
                         .width(64),
@@ -1185,22 +1413,30 @@ fn layer_props_panel<'a>(
                     layer_toggle_btn(
                         "None",
                         style.text_transform == TextTransform::None,
-                        Message::SelectedLayerTextTransform(TextTransform::None),
+                        Message::from(typography::Message::SelectedLayerTextTransform(
+                            TextTransform::None
+                        )),
                     ),
                     layer_toggle_btn(
                         "UPPER",
                         style.text_transform == TextTransform::Uppercase,
-                        Message::SelectedLayerTextTransform(TextTransform::Uppercase),
+                        Message::from(typography::Message::SelectedLayerTextTransform(
+                            TextTransform::Uppercase
+                        )),
                     ),
                     layer_toggle_btn(
                         "lower",
                         style.text_transform == TextTransform::Lowercase,
-                        Message::SelectedLayerTextTransform(TextTransform::Lowercase),
+                        Message::from(typography::Message::SelectedLayerTextTransform(
+                            TextTransform::Lowercase
+                        )),
                     ),
                     layer_toggle_btn(
                         "Title",
                         style.text_transform == TextTransform::Capitalize,
-                        Message::SelectedLayerTextTransform(TextTransform::Capitalize),
+                        Message::from(typography::Message::SelectedLayerTextTransform(
+                            TextTransform::Capitalize
+                        )),
                     ),
                 ]
                 .spacing(4)
@@ -1212,11 +1448,13 @@ fn layer_props_panel<'a>(
                     layer_toggle_btn(
                         if style.glow_enabled { "On" } else { "Off" },
                         style.glow_enabled,
-                        Message::SelectedLayerGlowToggled,
+                        Message::from(typography::Message::SelectedLayerGlowToggled),
                     ),
                     text(" Radius").size(11).color(theme::TEXT_MUTED),
                     text_input("8", state.editing_glow_radius.as_str())
-                        .on_input(Message::SelectedLayerGlowRadiusChanged)
+                        .on_input(|v| Message::from(
+                            typography::Message::SelectedLayerGlowRadiusChanged(v)
+                        ))
                         .size(12)
                         .padding([5, 6])
                         .width(52),
@@ -1226,28 +1464,24 @@ fn layer_props_panel<'a>(
             );
             if style.glow_enabled {
                 col = col.push(prop_label("Glow Colour  (R / G / B)"));
-                col = col.push(color_channel_slider(
-                    "R",
-                    style.glow_color.r,
-                    Message::SelectedLayerGlowColorR,
-                ));
-                col = col.push(color_channel_slider(
-                    "G",
-                    style.glow_color.g,
-                    Message::SelectedLayerGlowColorG,
-                ));
-                col = col.push(color_channel_slider(
-                    "B",
-                    style.glow_color.b,
-                    Message::SelectedLayerGlowColorB,
-                ));
+                col = col.push(color_channel_slider("R", style.glow_color.r, |v| {
+                    Message::from(typography::Message::SelectedLayerGlowColorR(v))
+                }));
+                col = col.push(color_channel_slider("G", style.glow_color.g, |v| {
+                    Message::from(typography::Message::SelectedLayerGlowColorG(v))
+                }));
+                col = col.push(color_channel_slider("B", style.glow_color.b, |v| {
+                    Message::from(typography::Message::SelectedLayerGlowColorB(v))
+                }));
             }
             col = col.push(prop_label("Text Stroke"));
             col = col.push(
                 row![
                     text("W").size(11).color(theme::TEXT_MUTED).width(14),
                     text_input("0", state.editing_text_stroke_width.as_str())
-                        .on_input(Message::SelectedLayerTextStrokeWidthChanged)
+                        .on_input(|v| Message::from(
+                            typography::Message::SelectedLayerTextStrokeWidthChanged(v)
+                        ))
                         .size(12)
                         .padding([5, 6])
                         .width(64),
@@ -1257,59 +1491,47 @@ fn layer_props_panel<'a>(
             );
             if style.text_stroke_width > 0.0 {
                 col = col.push(prop_label("Stroke Colour  (R / G / B)"));
-                col = col.push(color_channel_slider(
-                    "R",
-                    style.text_stroke_color.r,
-                    Message::SelectedLayerTextStrokeColorR,
-                ));
-                col = col.push(color_channel_slider(
-                    "G",
-                    style.text_stroke_color.g,
-                    Message::SelectedLayerTextStrokeColorG,
-                ));
-                col = col.push(color_channel_slider(
-                    "B",
-                    style.text_stroke_color.b,
-                    Message::SelectedLayerTextStrokeColorB,
-                ));
+                col = col.push(color_channel_slider("R", style.text_stroke_color.r, |v| {
+                    Message::from(typography::Message::SelectedLayerTextStrokeColorR(v))
+                }));
+                col = col.push(color_channel_slider("G", style.text_stroke_color.g, |v| {
+                    Message::from(typography::Message::SelectedLayerTextStrokeColorG(v))
+                }));
+                col = col.push(color_channel_slider("B", style.text_stroke_color.b, |v| {
+                    Message::from(typography::Message::SelectedLayerTextStrokeColorB(v))
+                }));
             }
             let _ = content;
         }
-        LayerContent::Shape {
+        ObjectContent::Shape {
             fill, stroke_width, ..
         } => {
             col = col.push(prop_label("Fill Colour  (R / G / B / A)"));
-            col = col.push(color_channel_slider(
-                "R",
-                fill.r,
-                Message::SelectedLayerShapeFillR,
-            ));
-            col = col.push(color_channel_slider(
-                "G",
-                fill.g,
-                Message::SelectedLayerShapeFillG,
-            ));
-            col = col.push(color_channel_slider(
-                "B",
-                fill.b,
-                Message::SelectedLayerShapeFillB,
-            ));
-            col = col.push(color_channel_slider(
-                "A",
-                fill.a,
-                Message::SelectedLayerShapeFillA,
-            ));
+            col = col.push(color_channel_slider("R", fill.r, |v| {
+                Message::from(layers::Message::SelectedLayerShapeFillR(v))
+            }));
+            col = col.push(color_channel_slider("G", fill.g, |v| {
+                Message::from(layers::Message::SelectedLayerShapeFillG(v))
+            }));
+            col = col.push(color_channel_slider("B", fill.b, |v| {
+                Message::from(layers::Message::SelectedLayerShapeFillB(v))
+            }));
+            col = col.push(color_channel_slider("A", fill.a, |v| {
+                Message::from(layers::Message::SelectedLayerShapeFillA(v))
+            }));
             col = col.push(prop_label("Stroke Width"));
             col = col.push(
                 text_input("0", state.editing_stroke_width.as_str())
-                    .on_input(Message::SelectedLayerShapeStrokeWidthChanged)
+                    .on_input(|v| {
+                        Message::from(layers::Message::SelectedLayerShapeStrokeWidthChanged(v))
+                    })
                     .size(12)
                     .padding([5, 6])
                     .width(80),
             );
             let _ = stroke_width;
         }
-        LayerContent::Image { path, .. } => {
+        ObjectContent::Image { path, .. } => {
             col = col.push(
                 container(
                     text(if path.is_empty() {
@@ -1323,7 +1545,7 @@ fn layer_props_panel<'a>(
                 .padding([4, 0]),
             );
         }
-        LayerContent::Video { path, .. } => {
+        ObjectContent::Video { path, .. } => {
             col = col.push(
                 container(
                     text(if path.is_empty() {

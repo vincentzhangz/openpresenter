@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use crate::slides::{Song, Verse};
+use crate::domain::{Song, Verse};
 
 pub fn export_song(song: &Song, dest_path: &Path) -> Result<()> {
     let xml = song_to_xml(song);
@@ -137,13 +137,10 @@ fn extract_first_tag(xml: &str, tag: &str) -> Option<String> {
             .and_then(|pos| xml[pos..].find('>').map(|end| pos + end + 1))
     });
 
-    let inner_start = if let Some(pos) = xml.find(&open) {
-        pos + open.len()
-    } else if let Some(pos) = xml.find(&open_attr) {
-        pos + xml[pos..].find('>')? + 1
-    } else {
-        return None;
-    };
+    let inner_start = xml.find(&open).map(|pos| pos + open.len()).or_else(|| {
+        let pos = xml.find(&open_attr)?;
+        Some(pos + xml[pos..].find('>')? + 1)
+    })?;
 
     let inner_end = xml[inner_start..].find(&close)?;
     let text = unescape_xml(xml[inner_start..inner_start + inner_end].trim());

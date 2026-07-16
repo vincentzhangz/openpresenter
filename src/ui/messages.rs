@@ -1,12 +1,14 @@
-use crate::slides::{Background, Color, ImageFit, TextAlignment, Transition};
-use iced::Point;
-
 #[derive(Debug, Clone)]
 pub enum Message {
     Noop,
     DismissError,
     SwitchMode(ViewMode),
     SwitchInspectorTab(InspectorTab),
+    FocusSearch,
+    ToggleEditMode,
+    SelectLeftSection(SidebarTab),
+    SelectRightDockTab(RightDockTab),
+    ToggleMediaBin,
     BackToList,
     Quit,
 
@@ -24,108 +26,51 @@ pub enum Message {
     ConfirmDeletePresentation,
     CancelDelete,
 
-    AddSlide,
-    AddSlideAfter(usize),
-    DuplicateSlide(usize),
-    SelectSlide(usize),
-    DeleteSlide(String),
-    MoveSlideUp(usize),
-    MoveSlideDown(usize),
-    SetSlideGroupLabel(usize, String),
-    GroupLabelChanged(String),
-
-    SlideTextChanged(String),
-    SlideFontSizeChanged(String),
-    SlideAlignmentChanged(TextAlignment),
-    SlideColorChanged(Color),
-    SlideShadowToggled(bool),
-    SlideOutlineToggled(bool),
-    SlideBoldToggled(bool),
-    SlideItalicToggled(bool),
-    SlidePositionPreset(f32, f32),
-    SlideBackgroundChanged(Background),
-    SlideTransitionChanged(Transition),
-    TransitionDurationChanged(String),
-    SaveSlide,
-
-    TextDragStarted,
-    TextDragged(Point),
-    TextDragEnded,
-
     PresentingSelectSlide(usize),
     PresentingNextSlide,
     PresentingPrevSlide,
+    ShowSlidesCursorMoved(iced::Point),
+    ShowSlideContextMenu(usize),
+    ShowSlideGroupSubmenu,
+    HideSlideContextMenu,
     AnimationTick,
+
+    StartTimer,
+    StopTimer,
+    ResetTimer,
 
     ToggleNdi,
     NdiSendCurrent,
     NdiBlackScreen,
     ClearOutput,
+    Ndi(crate::ui::ndi::Message),
 
-    ConvertSlideToText,
-    ConvertSlideToImage,
-    ConvertSlideToVideo,
-
-    PickImageFile,
     ImageFilePicked(Option<String>),
-    SlideImageFitChanged(ImageFit),
-    PickVideoFile,
     VideoFilePicked(Option<String>),
-
-    SlideNotesChanged(String),
 
     ToggleStageDisplay,
     ClockTick,
-    ToggleTimer,
-    ResetTimer,
+    Stage(crate::ui::stage::Message),
 
     SwitchSidebarTab(SidebarTab),
-    LibraryImportAsset,
-    LibraryApplyToSlide(String),
-    LibraryDeleteAsset(String),
-    LibrarySelectAsset(String),
+    Library(crate::ui::library::Message),
 
-    ApplyTheme(String),
-    ThemeNameChanged(String),
-    SaveSlideAsTheme,
-    DeleteTheme(String),
-    SelectTheme(String),
-    ExportThemes,
-    ImportThemes,
+    Themes(crate::ui::themes::Message),
+
+    Slides(crate::ui::slides::Message),
+    Layers(crate::ui::layers::Message),
+    Typography(crate::ui::typography::Message),
 
     ToggleShortcutsOverlay,
     Undo,
     Redo,
     ToggleReduceMotion,
-
-    SongSearchChanged(String),
-    NewSong,
-    OpenSong(String),
-    SaveSong,
-    DeleteSongClicked(String),
-    ConfirmDeleteSong,
-    CancelDeleteSong,
-    SongTitleChanged(String),
-    SongArtistChanged(String),
-    SongCopyrightChanged(String),
-    SongCcliChanged(String),
-    SongKeyChanged(String),
-    SongBpmChanged(String),
-    AddVerse,
-    DeleteVerse(usize),
-    MoveVerseUp(usize),
-    MoveVerseDown(usize),
-    VerseContentChanged(usize, String),
-    VerseLabelChanged(usize, String),
-    SongToPresentation,
+    Playlist(crate::ui::playlist::Message),
+    Songs(crate::ui::songs::Message),
+    Bible(crate::ui::bible::Message),
 
     VideoFrameTick,
-    VideoPlayToggled,
-    VideoLoopToggled(bool),
-    VideoVolumeChanged(f32),
-    VideoSeekChanged(f64),
-    VideoMuteToggled,
-    VideoSpeedChanged(f64),
+    Video(crate::ui::video::Message),
 
     OpenOutputWindow,
     CloseOutputWindow,
@@ -138,148 +83,23 @@ pub enum Message {
     OutputAutoFullscreenToggled(bool),
     OutputFullscreenToggled,
     OutputMonitorSizeFetched(Option<iced::Size>),
-    AddTextLayer,
-    AddShapeLayer(crate::slides::ShapeType),
-    SelectLayer(Option<usize>),
-    DeleteSelectedLayer,
-    MoveSelectedLayerUp,
-    MoveSelectedLayerDown,
-    ToggleSelectedLayerVisibility,
-    ToggleSelectedLayerLock,
-    SelectedLayerOpacityChanged(f32),
-    SelectedLayerTextChanged(String),
-    SelectedLayerFontSizeChanged(String),
-    SelectedLayerTextColorR(u8),
-    SelectedLayerTextColorG(u8),
-    SelectedLayerTextColorB(u8),
-    SelectedLayerTextShadowToggled,
-    SelectedLayerTextOutlineToggled,
-    SelectedLayerTextBoldToggled,
-    SelectedLayerTextItalicToggled,
-    SelectedLayerShapeFillR(u8),
-    SelectedLayerShapeFillG(u8),
-    SelectedLayerShapeFillB(u8),
-    SelectedLayerShapeFillA(u8),
-    SelectedLayerShapeStrokeWidthChanged(String),
-    SelectedLayerPositionXChanged(String),
-    SelectedLayerPositionYChanged(String),
-    SelectedLayerWidthChanged(String),
-    SelectedLayerHeightChanged(String),
-    LayerDragStarted(usize),
-    LayerDragged(iced::Point),
-    LayerDragEnded,
-    SelectedLayerFontFamilyChanged(String),
-    SelectedLayerLineHeightChanged(String),
-    SelectedLayerLetterSpacingChanged(String),
-    SelectedLayerTextTransform(crate::slides::TextTransform),
-    SelectedLayerGlowToggled,
-    SelectedLayerGlowColorR(u8),
-    SelectedLayerGlowColorG(u8),
-    SelectedLayerGlowColorB(u8),
-    SelectedLayerGlowRadiusChanged(String),
-    SelectedLayerTextStrokeWidthChanged(String),
-    SelectedLayerTextStrokeColorR(u8),
-    SelectedLayerTextStrokeColorG(u8),
-    SelectedLayerTextStrokeColorB(u8),
-    SelectedLayerTextColorHex(String),
-    NewServicePlan,
-    OpenServicePlan(String),
-    SaveServicePlan,
-    DeleteServicePlanClicked(String),
-    ConfirmDeleteServicePlan,
-    CancelDeleteServicePlan,
-    ServicePlanNameChanged(String),
-    AddPresentationItem(String),
-    AddSongItem(String),
-    AddHeaderItem,
-    AddBlankItem,
-    ServiceItemHeaderChanged(usize, String),
-    RemoveServiceItem(usize),
-    MoveServiceItemUp(usize),
-    MoveServiceItemDown(usize),
-    DuplicateServiceItem(usize),
-    StartService,
-    ServiceNextItem,
-    ServicePrevItem,
-    ServiceJumpToItem(usize),
-    EndService,
 
-    BibleTranslationSelected(String),
-    BibleBookSelected(String),
-    BibleChapterSelected(i32),
-    BibleVerseToggled(usize),
-    BibleSearchChanged(String),
-    BibleVersesPerSlideChanged(usize),
-    BibleSendToPresentation,
-    BibleImportFile,
-    BibleDeleteTranslationClicked(String),
-    BibleConfirmDeleteTranslation,
-    BibleCancelDeleteTranslation,
-    BibleSelectAll,
-    BibleClearSelection,
+    Audio(crate::ui::audio::Message),
 
-    AudioLoad(String),
-    AudioPlay,
-    AudioPause,
-    AudioStop,
-    AudioVolumeChanged(f32),
-    AudioToggleLoop,
-    AudioPickFile,
-    AudioTogglePanel,
+    Output(crate::ui::output::Message),
 
-    OutputSettingsOpen,
-    OutputSettingsClose,
-    OutputAddWindow,
-    OutputAddNdi,
-    OutputRemove(String),
-    OutputSetActive(String, bool),
-    OutputCycleContent(String),
-    OutputSetResolution(String, u32, u32),
-    OutputNewLabelChanged(String),
-    OutputNewNdiNameChanged(String),
-
-    ExportOppFile,
-    ImportOppFile,
-    ImportOppFileChosen(String),
-    ExportOpenLyrics,
-    ImportOpenLyrics,
-    ImportOpenLyricsChosen(String),
+    ImportExport(crate::ui::import_export::Message),
     ToggleImportExportPanel,
 
-    PropToggle(String),
-    PropRemove(String),
-    PropAddText,
-    PropAddImage,
-    PropNewNameChanged(String),
-    LowerThirdTitleChanged(String),
-    LowerThirdSubtitleChanged(String),
-    CreateLowerThird,
-    ApplyLook(String),
-    RemoveLook(String),
-    SaveLook,
-    LookNameChanged(String),
-    SetMask(crate::slides::Mask),
+    Props(crate::ui::props::Message),
+    SetMask(crate::domain::Mask),
     TogglePropsPanel,
 
     ToggleTriggersPanel,
-    TriggerHttpStart,
-    TriggerHttpStop,
-    TriggerHttpPortChanged(String),
-    TriggerOscStart,
-    TriggerOscStop,
-    TriggerOscPortChanged(String),
-    TriggerFired(crate::triggers::TriggerAction),
-    MacroAdd,
-    MacroRemove(String),
-    MacroRun(String),
-    MacroStop(String),
-    MacroToggleLoop(String),
-    MacroNameChanged(String),
+    Triggers(crate::ui::triggers::Message),
+    TriggerFired(crate::triggers::Action),
 
-    RecordingStart,
-    RecordingStop,
-    RecordingPathChanged(String),
-    RecordingFpsChanged(String),
+    Recording(crate::ui::recording::Message),
     ToggleRecordingPanel,
 }
 
@@ -287,7 +107,6 @@ pub enum Message {
 pub enum ViewMode {
     Edit,
     Show,
-    Plan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,11 +117,125 @@ pub enum InspectorTab {
     Layers,
 }
 
+/// Which tab is shown in the right dock while in Show mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RightDockTab {
+    #[default]
+    ShowControls,
+    Props,
+    Triggers,
+    Audio,
+    Timers,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SidebarTab {
     #[default]
     Presentations,
+    Playlists,
     Library,
     Songs,
     Bible,
+}
+
+impl From<crate::ui::playlist::Message> for Message {
+    fn from(msg: crate::ui::playlist::Message) -> Self {
+        Message::Playlist(msg)
+    }
+}
+
+impl From<crate::ui::songs::Message> for Message {
+    fn from(msg: crate::ui::songs::Message) -> Self {
+        Message::Songs(msg)
+    }
+}
+
+impl From<crate::ui::bible::Message> for Message {
+    fn from(msg: crate::ui::bible::Message) -> Self {
+        Message::Bible(msg)
+    }
+}
+
+impl From<crate::ui::props::Message> for Message {
+    fn from(msg: crate::ui::props::Message) -> Self {
+        Message::Props(msg)
+    }
+}
+
+impl From<crate::ui::audio::Message> for Message {
+    fn from(msg: crate::ui::audio::Message) -> Self {
+        Message::Audio(msg)
+    }
+}
+
+impl From<crate::ui::library::Message> for Message {
+    fn from(msg: crate::ui::library::Message) -> Self {
+        Message::Library(msg)
+    }
+}
+
+impl From<crate::ui::recording::Message> for Message {
+    fn from(msg: crate::ui::recording::Message) -> Self {
+        Message::Recording(msg)
+    }
+}
+
+impl From<crate::ui::triggers::Message> for Message {
+    fn from(msg: crate::ui::triggers::Message) -> Self {
+        Message::Triggers(msg)
+    }
+}
+
+impl From<crate::ui::import_export::Message> for Message {
+    fn from(msg: crate::ui::import_export::Message) -> Self {
+        Message::ImportExport(msg)
+    }
+}
+
+impl From<crate::ui::stage::Message> for Message {
+    fn from(msg: crate::ui::stage::Message) -> Self {
+        Message::Stage(msg)
+    }
+}
+
+impl From<crate::ui::video::Message> for Message {
+    fn from(msg: crate::ui::video::Message) -> Self {
+        Message::Video(msg)
+    }
+}
+
+impl From<crate::ui::ndi::Message> for Message {
+    fn from(msg: crate::ui::ndi::Message) -> Self {
+        Message::Ndi(msg)
+    }
+}
+
+impl From<crate::ui::output::Message> for Message {
+    fn from(msg: crate::ui::output::Message) -> Self {
+        Message::Output(msg)
+    }
+}
+
+impl From<crate::ui::themes::Message> for Message {
+    fn from(msg: crate::ui::themes::Message) -> Self {
+        Message::Themes(msg)
+    }
+}
+
+impl From<crate::ui::slides::Message> for Message {
+    fn from(msg: crate::ui::slides::Message) -> Self {
+        Message::Slides(msg)
+    }
+}
+
+impl From<crate::ui::layers::Message> for Message {
+    fn from(msg: crate::ui::layers::Message) -> Self {
+        Message::Layers(msg)
+    }
+}
+
+impl From<crate::ui::typography::Message> for Message {
+    fn from(msg: crate::ui::typography::Message) -> Self {
+        Message::Typography(msg)
+    }
 }

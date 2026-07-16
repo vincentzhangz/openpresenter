@@ -1,7 +1,8 @@
-use crate::slides::{LibraryAsset, Presentation};
+use crate::domain::Presentation;
 use crate::ui::components::{add_button, search_input, section_header, tab_bar, tab_btn};
 use crate::ui::library;
-use crate::ui::messages::{Message, SidebarTab};
+use crate::ui::main_window::MainWindow;
+use crate::ui::messages::{Message, SidebarTab, ViewMode};
 use crate::ui::theme;
 use iced::{
     Element, Length,
@@ -10,16 +11,15 @@ use iced::{
 
 pub const SIDEBAR_WIDTH: u16 = 240;
 
-#[allow(clippy::too_many_arguments)]
-pub fn sidebar<'a>(
-    presentations: &'a [Presentation],
-    search_query: &'a str,
-    active_id: Option<&'a str>,
-    sidebar_tab: SidebarTab,
-    lib_assets: &'a [LibraryAsset],
-    selected_asset_id: Option<&'a str>,
-    recently_used_ids: &'a [String],
-) -> Element<'a, Message> {
+pub fn sidebar<'a>(w: &'a MainWindow) -> Element<'a, Message> {
+    let presentations = &w.editor.presentations;
+    let search_query = &w.shell.search_query;
+    let sidebar_tab = w.shell.sidebar_tab;
+    let active_id = if w.shell.current_mode == ViewMode::Edit {
+        w.editor.editing.as_ref().map(|p| p.id.as_str())
+    } else {
+        w.presenting.presentation.as_ref().map(|p| p.id.as_str())
+    };
     let tab_bar_el = tab_bar(vec![
         tab_btn(
             "Slides",
@@ -44,18 +44,10 @@ pub fn sidebar<'a>(
     ]);
 
     if sidebar_tab == SidebarTab::Library {
-        return column![
-            tab_bar_el,
-            library::library_panel(
-                lib_assets,
-                search_query,
-                selected_asset_id,
-                recently_used_ids
-            ),
-        ]
-        .width(SIDEBAR_WIDTH as f32)
-        .height(Length::Fill)
-        .into();
+        return column![tab_bar_el, library::view(w),]
+            .width(SIDEBAR_WIDTH as f32)
+            .height(Length::Fill)
+            .into();
     }
     if sidebar_tab == SidebarTab::Songs {
         return container(tab_bar_el)

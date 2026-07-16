@@ -1,14 +1,348 @@
-use crate::slides::{BibleTranslation, BibleVerse};
+use crate::domain::{
+    BibleImportFile, BibleTranslation, BibleVerse, Presentation, Slide, Transition,
+};
 use crate::ui::components::{divider, section_header, tab_bar, tab_btn};
-use crate::ui::messages::{Message, SidebarTab};
+use crate::ui::main_window::MainWindow;
+use crate::ui::messages::{Message as RootMessage, SidebarTab, ViewMode};
 use crate::ui::theme;
 use iced::{
-    Alignment, Element, Length,
+    Alignment, Element, Length, Task,
     widget::{
         Column, Row, Space, button, checkbox, column, container, row, scrollable, text, text_input,
     },
 };
 use iced_font_awesome::fa_icon_solid;
+use uuid::Uuid;
+
+/// Messages owned by the Bible feature module (see `AGENTS.md`).
+#[derive(Debug, Clone)]
+pub enum Message {
+    TranslationSelected(String),
+    BookSelected(String),
+    ChapterSelected(i32),
+    VerseToggled(usize),
+    SearchChanged(String),
+    VersesPerSlideChanged(usize),
+    SendToPresentation,
+    ImportFile,
+    DeleteTranslationClicked(String),
+    ConfirmDeleteTranslation,
+    CancelDeleteTranslation,
+    SelectAll,
+    ClearSelection,
+}
+
+fn wrap(msg: Message) -> RootMessage {
+    RootMessage::Bible(msg)
+}
+
+/// Render the bible panel.
+pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    bible_panel(
+        &w.bible.translations,
+        w.bible.selected_translation.as_deref(),
+        &w.bible.books,
+        w.bible.selected_book.as_deref(),
+        &w.bible.chapters,
+        w.bible.selected_chapter,
+        &w.bible.verses,
+        &w.bible.selected_verse_indices,
+        &w.bible.search,
+        w.bible.verses_per_slide,
+        w.shell.sidebar_tab,
+    )
+}
+
+/// Dispatch a bible message.
+pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
+    match msg {
+        Message::TranslationSelected(id) => translation_selected(w, id),
+        Message::BookSelected(book) => book_selected(w, book),
+        Message::ChapterSelected(ch) => chapter_selected(w, ch),
+        Message::VerseToggled(idx) => verse_toggled(w, idx),
+        Message::SearchChanged(q) => search_changed(w, q),
+        Message::VersesPerSlideChanged(n) => verses_per_slide_changed(w, n),
+        Message::SendToPresentation => send_to_presentation(w),
+        Message::ImportFile => import_file(w),
+        Message::DeleteTranslationClicked(id) => delete_clicked(w, id),
+        Message::ConfirmDeleteTranslation => confirm_delete(w),
+        Message::CancelDeleteTranslation => cancel_delete(w),
+        Message::SelectAll => select_all(w),
+        Message::ClearSelection => clear_selection(w),
+    }
+}
+
+pub(crate) fn translation_selected(w: &mut MainWindow, id: String) -> Task<RootMessage> {
+    w.bible.selected_translation = Some(id.clone());
+    w.bible.selected_book = None;
+    w.bible.selected_chapter = None;
+    w.bible.books.clear();
+    w.bible.chapters.clear();
+    w.bible.verses.clear();
+    w.bible.selected_verse_indices.clear();
+    w.bible.search.clear();
+
+    match w.bible.repo.list_books(&id) {
+        Ok(books) => w.bible.books = books,
+        Err(e) => w.set_error(format!("bible list_books: {e}")),
+    }
+    Task::none()
+}
+
+pub(crate) fn book_selected(w: &mut MainWindow, book: String) -> Task<RootMessage> {
+    w.bible.selected_book = Some(book.clone());
+    w.bible.selected_chapter = None;
+    w.bible.chapters.clear();
+    w.bible.verses.clear();
+    w.bible.selected_verse_indices.clear();
+    w.bible.search.clear();
+
+    if let Some(tid) = w.bible.selected_translation.clone() {
+        match w.bible.repo.list_chapters(&tid, &book) {
+            Ok(chs) => {
+                w.bible.chapters = chs.clone();
+                if let Some(&first) = chs.first() {
+                    return chapter_selected(w, first);
+                }
+            }
+            Err(e) => w.set_error(format!("bible list_chapters: {e}")),
+        }
+    }
+    Task::none()
+}
+
+pub(crate) fn chapter_selected(w: &mut MainWindow, chapter: i32) -> Task<RootMessage> {
+    w.bible.selected_chapter = Some(chapter);
+    w.bible.verses.clear();
+    w.bible.selected_verse_indices.clear();
+    w.bible.search.clear();
+
+    if let (Some(tid), Some(book)) = (
+        w.bible.selected_translation.clone(),
+        w.bible.selected_book.clone(),
+    ) {
+        match w.bible.repo.get_chapter_verses(&tid, &book, chapter) {
+            Ok(vs) => w.bible.verses = vs,
+            Err(e) => w.set_error(format!("bible get_chapter_verses: {e}")),
+        }
+    }
+    Task::none()
+}
+
+pub(crate) fn search_changed(w: &mut MainWindow, query: String) -> Task<RootMessage> {
+    w.bible.search = query.clone();
+    w.bible.selected_verse_indices.clear();
+
+    if query.trim().is_empty() {
+        if let (Some(tid), Some(book), Some(ch)) = (
+            w.bible.selected_translation.clone(),
+            w.bible.selected_book.clone(),
+            w.bible.selected_chapter,
+        ) {
+            match w.bible.repo.get_chapter_verses(&tid, &book, ch) {
+                Ok(vs) => w.bible.verses = vs,
+                Err(e) => w.set_error(format!("bible restore chapter: {e}")),
+            }
+        } else {
+            w.bible.verses.clear();
+        }
+    } else if let Some(tid) = w.bible.selected_translation.clone() {
+        match w.bible.repo.search_verses(&tid, &query) {
+            Ok(vs) => w.bible.verses = vs,
+            Err(e) => w.set_error(format!("bible search: {e}")),
+        }
+    }
+    Task::none()
+}
+
+pub(crate) fn verse_toggled(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    if let Some(pos) = w
+        .bible
+        .selected_verse_indices
+        .iter()
+        .position(|&i| i == idx)
+    {
+        w.bible.selected_verse_indices.remove(pos);
+    } else {
+        w.bible.selected_verse_indices.push(idx);
+        w.bible.selected_verse_indices.sort_unstable();
+    }
+    Task::none()
+}
+
+pub(crate) fn select_all(w: &mut MainWindow) -> Task<RootMessage> {
+    w.bible.selected_verse_indices = (0..w.bible.verses.len()).collect();
+    Task::none()
+}
+
+pub(crate) fn clear_selection(w: &mut MainWindow) -> Task<RootMessage> {
+    w.bible.selected_verse_indices.clear();
+    Task::none()
+}
+
+pub(crate) fn verses_per_slide_changed(w: &mut MainWindow, n: usize) -> Task<RootMessage> {
+    w.bible.verses_per_slide = n.clamp(1, 10);
+    Task::none()
+}
+
+pub(crate) fn send_to_presentation(w: &mut MainWindow) -> Task<RootMessage> {
+    if w.bible.selected_verse_indices.is_empty() {
+        return Task::none();
+    }
+
+    let selected: Vec<_> = w
+        .bible
+        .selected_verse_indices
+        .iter()
+        .filter_map(|&i| w.bible.verses.get(i))
+        .cloned()
+        .collect();
+
+    if selected.is_empty() {
+        return Task::none();
+    }
+
+    let first = &selected[0];
+    let last = &selected[selected.len() - 1];
+    let pres_name = if first.book == last.book && first.chapter == last.chapter {
+        format!(
+            "{} {}:{}-{}",
+            first.book, first.chapter, first.verse, last.verse
+        )
+    } else {
+        format!(
+            "{} {}:{} – {} {}:{}",
+            first.book, first.chapter, first.verse, last.book, last.chapter, last.verse
+        )
+    };
+
+    let vps = w.bible.verses_per_slide;
+
+    let chunks: Vec<Vec<_>> = selected.chunks(vps).map(|c| c.to_vec()).collect();
+
+    let slides: Vec<Slide> = chunks
+        .iter()
+        .map(|chunk| {
+            let verse_lines: Vec<String> = chunk
+                .iter()
+                .map(|v| format!("{}  {}", v.verse, v.text))
+                .collect();
+            let text = verse_lines.join("\n\n");
+
+            let f = &chunk[0];
+            let l = &chunk[chunk.len() - 1];
+            let group = if f.verse == l.verse {
+                format!("{} {}:{}", f.book, f.chapter, f.verse)
+            } else {
+                format!("{} {}:{}-{}", f.book, f.chapter, f.verse, l.verse)
+            };
+
+            let mut slide = Slide::new_text_in_group(text, group);
+            slide.transition = Transition::Fade { duration_ms: 500 };
+            slide
+        })
+        .collect();
+
+    let pres = Presentation {
+        id: Uuid::new_v4().to_string(),
+        name: pres_name.clone(),
+        slides,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    match w.services.presentations.create(&pres_name) {
+        Ok(_) => {
+            w.load_presentations();
+            if let Some(new_pres) = w.editor.presentations.first().cloned() {
+                if let Err(e) = w
+                    .services
+                    .presentations
+                    .replace_slides(&new_pres.id, &pres.slides)
+                {
+                    w.set_error(format!("bible send_to_presentation replace: {e}"));
+                }
+                w.editor.editing = Some(Presentation {
+                    id: new_pres.id.clone(),
+                    name: new_pres.name,
+                    slides: pres.slides,
+                    created_at: new_pres.created_at,
+                    updated_at: new_pres.updated_at,
+                });
+                w.editor.selected_slide_index = Some(0);
+                w.shell.current_mode = ViewMode::Edit;
+                w.shell.sidebar_tab = SidebarTab::Presentations;
+                w.load_slide_for_editing();
+            }
+        }
+        Err(e) => w.set_error(format!("bible send_to_presentation create: {e}")),
+    }
+    Task::none()
+}
+
+pub(crate) fn import_file(w: &mut MainWindow) -> Task<RootMessage> {
+    let path = rfd::FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_title("Import Bible Translation (JSON)")
+        .pick_file();
+
+    let Some(path) = path else {
+        return Task::none();
+    };
+
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            w.set_error(format!("bible import read: {e}"));
+            return Task::none();
+        }
+    };
+
+    let file: BibleImportFile = match serde_json::from_str(&raw) {
+        Ok(f) => f,
+        Err(e) => {
+            w.set_error(format!("bible import parse: {e}"));
+            return Task::none();
+        }
+    };
+
+    let abbr = file.abbr.clone();
+    match w.bible.repo.import_translation(file) {
+        Ok(tr) => {
+            eprintln!("Imported Bible translation: {} ({})", tr.name, abbr);
+            w.load_bible_translations();
+        }
+        Err(e) => w.set_error(format!("bible import save: {e}")),
+    }
+    Task::none()
+}
+
+pub(crate) fn delete_clicked(w: &mut MainWindow, id: String) -> Task<RootMessage> {
+    w.bible.translation_to_delete = Some(id);
+    Task::none()
+}
+
+pub(crate) fn confirm_delete(w: &mut MainWindow) -> Task<RootMessage> {
+    if let Some(id) = w.bible.translation_to_delete.take() {
+        if let Err(e) = w.bible.repo.delete_translation(&id) {
+            w.set_error(format!("bible delete: {e}"));
+        }
+        if w.bible.selected_translation.as_deref() == Some(&id) {
+            w.bible.selected_translation = None;
+            w.bible.books.clear();
+            w.bible.chapters.clear();
+            w.bible.verses.clear();
+            w.bible.selected_verse_indices.clear();
+        }
+        w.load_bible_translations();
+    }
+    Task::none()
+}
+
+pub(crate) fn cancel_delete(w: &mut MainWindow) -> Task<RootMessage> {
+    w.bible.translation_to_delete = None;
+    Task::none()
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn bible_panel<'a>(
@@ -23,7 +357,7 @@ pub fn bible_panel<'a>(
     search: &'a str,
     verses_per_slide: usize,
     sidebar_tab: SidebarTab,
-) -> Element<'a, Message> {
+) -> Element<'a, RootMessage> {
     let left = translation_list(translations, selected_translation, sidebar_tab);
     let right = verse_browser(
         books,
@@ -45,27 +379,27 @@ fn translation_list<'a>(
     translations: &'a [BibleTranslation],
     selected_id: Option<&'a str>,
     sidebar_tab: SidebarTab,
-) -> Element<'a, Message> {
+) -> Element<'a, RootMessage> {
     let tabs = tab_bar(vec![
         tab_btn(
             "Slides",
             sidebar_tab == SidebarTab::Presentations,
-            Message::SwitchSidebarTab(SidebarTab::Presentations),
+            RootMessage::SwitchSidebarTab(SidebarTab::Presentations),
         ),
         tab_btn(
             "Library",
             sidebar_tab == SidebarTab::Library,
-            Message::SwitchSidebarTab(SidebarTab::Library),
+            RootMessage::SwitchSidebarTab(SidebarTab::Library),
         ),
         tab_btn(
             "Songs",
             sidebar_tab == SidebarTab::Songs,
-            Message::SwitchSidebarTab(SidebarTab::Songs),
+            RootMessage::SwitchSidebarTab(SidebarTab::Songs),
         ),
         tab_btn(
             "Bible",
             sidebar_tab == SidebarTab::Bible,
-            Message::SwitchSidebarTab(SidebarTab::Bible),
+            RootMessage::SwitchSidebarTab(SidebarTab::Bible),
         ),
     ]);
 
@@ -91,7 +425,7 @@ fn translation_list<'a>(
             .spacing(8)
             .align_y(Alignment::Center);
             let btn = button(row_content)
-                .on_press(Message::BibleTranslationSelected(tr.id.clone()))
+                .on_press(wrap(Message::TranslationSelected(tr.id.clone())))
                 .width(Length::Fill)
                 .padding([6u16, 10u16])
                 .style(if is_active {
@@ -106,14 +440,14 @@ fn translation_list<'a>(
     let scrollable_list = scrollable(list).height(Length::Fill);
 
     let import_btn = button(text("Import JSON…").size(12))
-        .on_press(Message::BibleImportFile)
+        .on_press(wrap(Message::ImportFile))
         .width(Length::Fill)
         .padding([8u16, 12u16])
         .style(theme::primary_button);
 
-    let delete_btn: Element<'a, Message> = if let Some(id) = selected_id {
+    let delete_btn: Element<'a, RootMessage> = if let Some(id) = selected_id {
         button(text("Delete Translation").size(12))
-            .on_press(Message::BibleDeleteTranslationClicked(id.to_string()))
+            .on_press(wrap(Message::DeleteTranslationClicked(id.to_string())))
             .width(Length::Fill)
             .padding([8u16, 12u16])
             .style(theme::danger_button)
@@ -145,7 +479,7 @@ fn verse_browser<'a>(
     selected_verse_indices: &'a [usize],
     search: &'a str,
     verses_per_slide: usize,
-) -> Element<'a, Message> {
+) -> Element<'a, RootMessage> {
     if books.is_empty() {
         return container(
             text("Select a translation on the left,\nor import one from a JSON file.")
@@ -165,7 +499,7 @@ fn verse_browser<'a>(
         let is_sel = selected_book == Some(book.as_str());
         book_row = book_row.push(
             button(text(book.as_str()).size(11))
-                .on_press(Message::BibleBookSelected(book.clone()))
+                .on_press(wrap(Message::BookSelected(book.clone())))
                 .padding([4u16, 8u16])
                 .style(if is_sel {
                     theme::primary_button
@@ -182,13 +516,13 @@ fn verse_browser<'a>(
     .width(Length::Fill)
     .style(theme::dark_panel_style);
 
-    let chapter_row: Element<'a, Message> = if !chapters.is_empty() {
+    let chapter_row: Element<'a, RootMessage> = if !chapters.is_empty() {
         let mut ch_row = Row::new().spacing(4).padding([4u16, 8u16]);
         for &ch in chapters {
             let is_sel = selected_chapter == Some(ch);
             ch_row = ch_row.push(
                 button(text(ch.to_string()).size(11))
-                    .on_press(Message::BibleChapterSelected(ch))
+                    .on_press(wrap(Message::ChapterSelected(ch)))
                     .padding([4u16, 6u16])
                     .style(if is_sel {
                         theme::primary_button
@@ -211,7 +545,7 @@ fn verse_browser<'a>(
 
     let search_bar = container(
         text_input("Search verses…", search)
-            .on_input(Message::BibleSearchChanged)
+            .on_input(move |v| wrap(Message::SearchChanged(v)))
             .padding([6u16, 10u16])
             .size(13),
     )
@@ -232,11 +566,11 @@ fn verse_browser<'a>(
     } else {
         let sel_bar = row![
             button(text("All").size(11))
-                .on_press(Message::BibleSelectAll)
+                .on_press(wrap(Message::SelectAll))
                 .padding([3u16, 8u16])
                 .style(theme::ghost_button),
             button(text("None").size(11))
-                .on_press(Message::BibleClearSelection)
+                .on_press(wrap(Message::ClearSelection))
                 .padding([3u16, 8u16])
                 .style(theme::ghost_button),
             Space::new().width(Length::Fill),
@@ -260,7 +594,7 @@ fn verse_browser<'a>(
             let verse_ref = text(label).size(11).color(theme::TEXT_MUTED).width(60);
             let verse_text = text(v.text.as_str()).size(12);
             let cb = checkbox(is_checked)
-                .on_toggle(move |_| Message::BibleVerseToggled(idx))
+                .on_toggle(move |_| wrap(Message::VerseToggled(idx)))
                 .spacing(4);
             let row_elem = row![cb, verse_ref, verse_text]
                 .spacing(8)
@@ -283,16 +617,16 @@ fn verse_browser<'a>(
     };
 
     let vps_dec = button(text("−").size(13))
-        .on_press(Message::BibleVersesPerSlideChanged(
+        .on_press(wrap(Message::VersesPerSlideChanged(
             verses_per_slide.saturating_sub(1).max(1),
-        ))
+        )))
         .padding([4u16, 8u16])
         .style(theme::ghost_button);
 
     let vps_inc = button(text("+").size(13))
-        .on_press(Message::BibleVersesPerSlideChanged(
+        .on_press(wrap(Message::VersesPerSlideChanged(
             (verses_per_slide + 1).min(10),
-        ))
+        )))
         .padding([4u16, 8u16])
         .style(theme::ghost_button);
 
@@ -300,12 +634,12 @@ fn verse_browser<'a>(
 
     let send_btn = button(
         row![
-            fa_icon_solid("share").size(13.0),
+            fa_icon_solid("share").size(13.0_f32),
             text(" Send to Presentation").size(13),
         ]
         .align_y(Alignment::Center),
     )
-    .on_press(Message::BibleSendToPresentation)
+    .on_press(wrap(Message::SendToPresentation))
     .padding([8u16, 14u16])
     .style(theme::primary_button);
 

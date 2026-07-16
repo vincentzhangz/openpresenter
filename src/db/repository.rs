@@ -1,8 +1,8 @@
 use crate::Result;
 use crate::db::Database;
-use crate::slides::{
-    BibleImportFile, BibleTranslation, BibleVerse, LibraryAsset, Presentation, ServiceItem,
-    ServicePlan, Slide, SlideTheme, Song, Verse,
+use crate::domain::{
+    BibleImportFile, BibleTranslation, BibleVerse, LibraryAsset, Playlist, PlaylistItem,
+    Presentation, Slide, SlideTheme, Song, Verse,
 };
 use chrono::Utc;
 use rusqlite::params;
@@ -16,6 +16,7 @@ fn ts_to_utc(ts: i64) -> chrono::DateTime<Utc> {
         .unwrap_or_default()
 }
 
+#[derive(Clone)]
 pub struct PresentationRepository {
     db: Arc<Database>,
 }
@@ -40,9 +41,26 @@ impl PresentationRepository {
                     updated_at: ts_to_utc(row.get(3)?),
                 })
             })?;
-            let presentations = rows
+            let mut presentations = rows
                 .filter_map(|r| r.map_err(|e| eprintln!("presentation row error: {e}")).ok())
-                .collect();
+                .collect::<Vec<Presentation>>();
+
+            // Load the full slides for each presentation so list rows reflect
+            // the real slide count (and contents) without a second fetch.
+            let mut slide_stmt = conn.prepare(
+                "SELECT slide_data FROM slides \
+                 WHERE presentation_id = ?1 ORDER BY order_index ASC",
+            )?;
+            for pres in &mut presentations {
+                pres.slides = slide_stmt
+                    .query_map(params![&pres.id], |row| {
+                        let data: String = row.get(0)?;
+                        serde_json::from_str::<Slide>(&data)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                    })?
+                    .filter_map(|r| r.map_err(|e| eprintln!("slide row error: {e}")).ok())
+                    .collect();
+            }
             Ok(presentations)
         })
     }
@@ -219,6 +237,7 @@ impl PresentationRepository {
     }
 }
 
+#[derive(Clone)]
 pub struct LibraryRepository {
     db: Arc<Database>,
 }
@@ -298,6 +317,7 @@ impl LibraryRepository {
     }
 }
 
+#[derive(Clone)]
 pub struct ThemeRepository {
     db: Arc<Database>,
 }
@@ -351,6 +371,7 @@ impl ThemeRepository {
     }
 }
 
+#[derive(Clone)]
 pub struct SongRepository {
     db: Arc<Database>,
 }
@@ -520,16 +541,17 @@ impl SongRepository {
     }
 }
 
-pub struct ServiceRepository {
+#[derive(Clone)]
+pub struct PlaylistRepository {
     db: Arc<Database>,
 }
 
-impl ServiceRepository {
+impl PlaylistRepository {
     pub fn new(db: Arc<Database>) -> Self {
         Self { db }
     }
 
-    pub fn list_plans(&self) -> Result<Vec<ServicePlan>> {
+    pub fn list_playlists(&self) -> Result<Vec<Playlist>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, name, created_at, updated_at \
@@ -537,7 +559,7 @@ impl ServiceRepository {
             )?;
             let plans = stmt
                 .query_map([], |row| {
-                    Ok(ServicePlan {
+                    Ok(Playlist {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         items: Vec::new(),
@@ -550,13 +572,13 @@ impl ServiceRepository {
         })
     }
 
-    pub fn get_plan(&self, id: &str) -> Result<ServicePlan> {
+    pub fn get_playlist(&self, id: &str) -> Result<Playlist> {
         self.db.with_conn(|conn| {
-            let mut plan: ServicePlan = conn.query_row(
+            let mut plan: Playlist = conn.query_row(
                 "SELECT id, name, created_at, updated_at FROM service_plans WHERE id = ?1",
                 params![id],
                 |row| {
-                    Ok(ServicePlan {
+                    Ok(Playlist {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         items: Vec::new(),
@@ -583,7 +605,7 @@ impl ServiceRepository {
         })
     }
 
-    pub fn save_plan(&self, plan: &ServicePlan) -> Result<()> {
+    pub fn save_playlist(&self, plan: &Playlist) -> Result<()> {
         self.db.with_conn(|conn| {
             conn.execute(
                 "INSERT OR REPLACE INTO service_plans \
@@ -599,14 +621,14 @@ impl ServiceRepository {
         })
     }
 
-    pub fn delete_plan(&self, id: &str) -> Result<()> {
+    pub fn delete_playlist(&self, id: &str) -> Result<()> {
         self.db.with_conn(|conn| {
             conn.execute("DELETE FROM service_plans WHERE id = ?1", params![id])?;
             Ok(())
         })
     }
 
-    pub fn save_items(&self, plan_id: &str, items: &[ServiceItem]) -> Result<()> {
+    pub fn save_items(&self, plan_id: &str, items: &[PlaylistItem]) -> Result<()> {
         self.db.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
             tx.execute(
@@ -634,6 +656,7 @@ impl ServiceRepository {
     }
 }
 
+#[derive(Clone)]
 pub struct BibleRepository {
     db: Arc<Database>,
 }

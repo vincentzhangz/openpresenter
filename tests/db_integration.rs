@@ -1,5 +1,5 @@
 use openpresenter::db::{Database, PresentationRepository, SongRepository};
-use openpresenter::slides::{
+use openpresenter::domain::{
     Background, Color, Slide, SlideContent, Song, TextStyle, Transition, Verse,
 };
 use std::sync::Arc;
@@ -42,9 +42,10 @@ fn add_slides_to_presentation() {
         },
         background: Background::Solid(Color::black()),
         transition: Transition::Cut,
-        group_label: None,
+        group: None,
         notes: None,
         layers: Vec::new(),
+        cues: Vec::new(),
     };
     let slide2 = Slide {
         id: "slide-2".to_string(),
@@ -54,9 +55,10 @@ fn add_slides_to_presentation() {
         },
         background: Background::Solid(Color::black()),
         transition: Transition::Cut,
-        group_label: Some("Group A".to_string()),
+        group: Some("Group A".to_string()),
         notes: None,
         layers: Vec::new(),
+        cues: Vec::new(),
     };
 
     repo.add_slide(&pres.id, &slide1, 0).expect("add slide1");
@@ -68,7 +70,7 @@ fn add_slides_to_presentation() {
         SlideContent::Text { text, .. } => assert_eq!(text, "Verse 1"),
         _ => panic!("unexpected content type"),
     }
-    assert_eq!(loaded.slides[1].group_label, Some("Group A".to_string()));
+    assert_eq!(loaded.slides[1].group, Some("Group A".to_string()));
 }
 
 #[test]
@@ -105,9 +107,10 @@ fn replace_slides_replaces_all_existing_slides() {
         },
         background: Background::Solid(Color::black()),
         transition: Transition::Cut,
-        group_label: None,
+        group: None,
         notes: None,
         layers: Vec::new(),
+        cues: Vec::new(),
     };
     repo.add_slide(&pres.id, &orig, 0).expect("add");
 
@@ -120,9 +123,10 @@ fn replace_slides_replaces_all_existing_slides() {
             },
             background: Background::Solid(Color::black()),
             transition: Transition::Cut,
-            group_label: None,
+            group: None,
             notes: None,
             layers: Vec::new(),
+            cues: Vec::new(),
         },
         Slide {
             id: "new-2".to_string(),
@@ -132,9 +136,10 @@ fn replace_slides_replaces_all_existing_slides() {
             },
             background: Background::Solid(Color::black()),
             transition: Transition::Cut,
-            group_label: None,
+            group: None,
             notes: None,
             layers: Vec::new(),
+            cues: Vec::new(),
         },
     ];
     repo.replace_presentation_slides(&pres.id, &new_slides)

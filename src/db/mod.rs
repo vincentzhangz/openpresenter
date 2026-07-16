@@ -3,8 +3,8 @@ pub mod repository;
 
 pub use repository::BibleRepository;
 pub use repository::LibraryRepository;
+pub use repository::PlaylistRepository;
 pub use repository::PresentationRepository;
-pub use repository::ServiceRepository;
 pub use repository::SongRepository;
 pub use repository::ThemeRepository;
 

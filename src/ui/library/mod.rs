@@ -1,6 +1,7 @@
-use crate::slides::LibraryAsset;
+use crate::domain::LibraryAsset;
 use crate::ui::components::{add_button, search_input, section_header, truncate};
-use crate::ui::messages::Message;
+use crate::ui::main_window::MainWindow;
+use crate::ui::messages::Message as RootMessage;
 use crate::ui::theme;
 use iced::{
     Alignment, Background, Border, Color, Element, Length,
@@ -10,15 +11,56 @@ use iced_font_awesome::fa_icon_solid;
 
 pub const LIBRARY_PANEL_WIDTH: u16 = 240;
 
+/// Messages owned by the Library feature module (see `AGENTS.md`).
+///
+/// `SearchQueryChanged` and `SwitchSidebarTab` stay as root variants (global
+/// search / navigation state shared with the sidebar).
+#[derive(Debug, Clone)]
+pub enum Message {
+    ImportAsset,
+    ApplyToSlide(String),
+    DeleteAsset(String),
+    SelectAsset(String),
+}
+
+fn wrap(msg: Message) -> RootMessage {
+    RootMessage::Library(msg)
+}
+
+/// Render the library panel.
+pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    library_panel(
+        &w.library.assets,
+        &w.shell.search_query,
+        w.library.selected_id.as_deref(),
+        &w.library.recently_used_ids,
+    )
+}
+
+/// Dispatch a library message.
+pub fn update(w: &mut MainWindow, msg: Message) -> iced::Task<RootMessage> {
+    use crate::ui::output;
+    match msg {
+        Message::ImportAsset => output::library_import_asset(w),
+        Message::ApplyToSlide(id) => output::library_apply_to_slide(w, id),
+        Message::DeleteAsset(id) => output::library_delete_asset(w, id),
+        Message::SelectAsset(id) => output::library_select_asset(w, id),
+    }
+}
+
 pub fn library_panel<'a>(
     assets: &'a [LibraryAsset],
     search_query: &'a str,
     selected_id: Option<&'a str>,
     recently_used_ids: &'a [String],
-) -> Element<'a, Message> {
+) -> Element<'a, RootMessage> {
     let header = section_header("MEDIA LIBRARY");
 
-    let search = search_input("Search assets…", search_query, Message::SearchQueryChanged);
+    let search = search_input(
+        "Search assets…",
+        search_query,
+        RootMessage::SearchQueryChanged,
+    );
 
     let query_lower = search_query.to_lowercase();
 
@@ -62,7 +104,7 @@ pub fn library_panel<'a>(
         }
     }
 
-    let action_bar: Element<Message> = if let Some(selected) = selected_id {
+    let action_bar: Element<RootMessage> = if let Some(selected) = selected_id {
         let asset_id = selected.to_owned();
         container(
             button(
@@ -70,7 +112,7 @@ pub fn library_panel<'a>(
                     .size(12)
                     .color(theme::TEXT_PRIMARY),
             )
-            .on_press(Message::LibraryApplyToSlide(asset_id))
+            .on_press(wrap(Message::ApplyToSlide(asset_id)))
             .width(Length::Fill)
             .padding([8, 10])
             .style(theme::primary_button),
@@ -81,7 +123,7 @@ pub fn library_panel<'a>(
         Space::new().height(0).into()
     };
 
-    let import_btn = add_button("Import Asset", Message::LibraryImportAsset);
+    let import_btn = add_button("Import Asset", wrap(Message::ImportAsset));
 
     let content = column![
         header,
@@ -102,9 +144,9 @@ pub fn library_panel<'a>(
 fn asset_grid<'a>(
     assets: &[&'a LibraryAsset],
     selected_id: Option<&'a str>,
-) -> Element<'a, Message> {
+) -> Element<'a, RootMessage> {
     let mut grid = Column::new().spacing(4);
-    let mut row_buf: Vec<Element<Message>> = Vec::new();
+    let mut row_buf: Vec<Element<RootMessage>> = Vec::new();
 
     for (i, asset) in assets.iter().enumerate() {
         let selected = selected_id.map(|id| id == asset.id).unwrap_or(false);
@@ -125,7 +167,7 @@ fn asset_grid<'a>(
     grid.into()
 }
 
-fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, Message> {
+fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, RootMessage> {
     let type_badge_text = if asset.is_image() { "IMG" } else { "VID" };
     let type_color = if asset.is_image() {
         theme::ACCENT_BLUE
@@ -171,10 +213,14 @@ fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, Messag
         .color(theme::TEXT_SECONDARY);
 
     let del_id = asset.id.clone();
-    let delete_btn = button(fa_icon_solid("xmark").size(11.0).color(theme::TEXT_MUTED))
-        .on_press(Message::LibraryDeleteAsset(del_id))
-        .padding([0, 3])
-        .style(theme::ghost_button);
+    let delete_btn = button(
+        fa_icon_solid("xmark")
+            .size(11.0_f32)
+            .color(theme::TEXT_MUTED),
+    )
+    .on_press(wrap(Message::DeleteAsset(del_id)))
+    .padding([0, 3])
+    .style(theme::ghost_button);
 
     let select_id = asset.id.clone();
     let card_inner = column![
@@ -185,7 +231,7 @@ fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, Messag
     .spacing(2);
 
     button(card_inner)
-        .on_press(Message::LibrarySelectAsset(select_id))
+        .on_press(wrap(Message::SelectAsset(select_id)))
         .width(Length::Fill)
         .padding([4, 4])
         .style(move |_t: &iced::Theme, status| {
@@ -208,7 +254,7 @@ fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, Messag
         .into()
 }
 
-fn section_divider<'a>(label: &'a str) -> Element<'a, Message> {
+fn section_divider<'a>(label: &'a str) -> Element<'a, RootMessage> {
     row![
         container(Space::new().width(Length::Fill).height(1.0))
             .style(|_: &iced::Theme| iced::widget::container::Style {
