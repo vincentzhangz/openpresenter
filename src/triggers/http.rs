@@ -1,4 +1,4 @@
-use super::TriggerAction;
+use super::Action;
 use axum::{
     Router,
     extract::{Path, State},
@@ -10,7 +10,7 @@ use tokio::sync::{mpsc::Sender, oneshot};
 
 pub async fn run_server(
     port: u16,
-    tx: Sender<TriggerAction>,
+    tx: Sender<Action>,
     shutdown: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
     let app = Router::new()
@@ -38,21 +38,18 @@ async fn status() -> Json<Value> {
     Json(json!({"status": "ok"}))
 }
 
-async fn next_slide(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::NextSlide).await;
+async fn next_slide(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::NextSlide).await;
     Json(json!({"action": "next"}))
 }
 
-async fn prev_slide(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::PrevSlide).await;
+async fn prev_slide(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::PrevSlide).await;
     Json(json!({"action": "prev"}))
 }
 
-async fn goto_slide(
-    Path(index): Path<usize>,
-    State(tx): State<Sender<TriggerAction>>,
-) -> Json<Value> {
-    let _ = tx.send(TriggerAction::GotoSlide(index)).await;
+async fn goto_slide(Path(index): Path<usize>, State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::GotoSlide(index)).await;
     Json(json!({"action": "goto", "index": index}))
 }
 
@@ -60,32 +57,29 @@ fn parse_on_param(s: &str) -> bool {
     matches!(s, "true" | "1" | "on")
 }
 
-async fn black_screen(
-    Path(on): Path<String>,
-    State(tx): State<Sender<TriggerAction>>,
-) -> Json<Value> {
+async fn black_screen(Path(on): Path<String>, State(tx): State<Sender<Action>>) -> Json<Value> {
     let black = parse_on_param(&on);
-    let _ = tx.send(TriggerAction::BlackScreen(black)).await;
+    let _ = tx.send(Action::BlackScreen(black)).await;
     Json(json!({"action": "black", "value": black}))
 }
 
-async fn clear_output(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::ClearOutput).await;
+async fn clear_output(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::ClearOutput).await;
     Json(json!({"action": "clear"}))
 }
 
-async fn timer_start(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::StartTimer).await;
+async fn timer_start(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::StartTimer).await;
     Json(json!({"action": "timer_start"}))
 }
 
-async fn timer_stop(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::StopTimer).await;
+async fn timer_stop(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::StopTimer).await;
     Json(json!({"action": "timer_stop"}))
 }
 
-async fn timer_reset(State(tx): State<Sender<TriggerAction>>) -> Json<Value> {
-    let _ = tx.send(TriggerAction::ResetTimer).await;
+async fn timer_reset(State(tx): State<Sender<Action>>) -> Json<Value> {
+    let _ = tx.send(Action::ResetTimer).await;
     Json(json!({"action": "timer_reset"}))
 }
 

@@ -1,146 +1,232 @@
 use crate::ui::components::live_badge;
-use crate::ui::messages::{Message, ViewMode};
+use crate::ui::messages::{Message, RightDockTab, ViewMode};
+use crate::ui::state::ShellState;
 use crate::ui::theme;
 use iced::{
-    Alignment, Element, Length,
+    Alignment, Background, Border, Color, Element, Length,
     widget::{Space, button, container, row, text},
 };
+use iced_font_awesome::fa_icon_solid;
 
-pub fn navbar<'a>(
-    current_mode: ViewMode,
-    ndi_active: bool,
-    stage_active: bool,
-    reduce_motion: bool,
-    audio_panel_visible: bool,
-    triggers_panel_open: bool,
-    recording_active: bool,
-) -> Element<'a, Message> {
-    let logo = text("OpenPresenter").size(17).color(theme::TEXT_PRIMARY);
+struct ToolButton {
+    icon: &'static str,
+    label: &'static str,
+    on_press: Option<Message>,
+    active: bool,
+}
 
-    let edit_tab = button(text("Edit").size(13))
-        .padding([6, 22])
-        .on_press(Message::SwitchMode(ViewMode::Edit))
-        .style(if current_mode == ViewMode::Edit {
-            theme::primary_button
-        } else {
-            theme::tab_inactive_button
-        });
-
-    let show_tab = button(text("Show").size(13))
-        .padding([6, 22])
-        .on_press(Message::SwitchMode(ViewMode::Show))
-        .style(if current_mode == ViewMode::Show && !stage_active {
-            theme::primary_button
-        } else {
-            theme::tab_inactive_button
-        });
-
-    let plan_tab = button(text("Plan").size(13))
-        .padding([6, 22])
-        .on_press(Message::SwitchMode(ViewMode::Plan))
-        .style(if current_mode == ViewMode::Plan {
-            theme::primary_button
-        } else {
-            theme::tab_inactive_button
-        });
-
-    let stage_tab = button(text("Stage").size(13))
-        .padding([6, 18])
-        .on_press(Message::ToggleStageDisplay)
-        .style(if stage_active {
-            theme::primary_button
-        } else {
-            theme::tab_inactive_button
-        });
-
-    let ndi_badge = if ndi_active {
-        live_badge("NDI")
+fn tool_btn(b: ToolButton) -> Element<'static, Message> {
+    let icon = fa_icon_solid(b.icon).size(16.0_f32).color(if b.active {
+        theme::ACCENT_ORANGE
     } else {
+        theme::TEXT_SECONDARY
+    });
+    let content = row![
+        icon,
+        if b.label.is_empty() {
+            Element::new(Space::new().width(0))
+        } else {
+            text(b.label)
+                .size(11)
+                .color(if b.active {
+                    theme::TEXT_PRIMARY
+                } else {
+                    theme::TEXT_MUTED
+                })
+                .into()
+        }
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+
+    let mut btn = button(content)
+        .padding([6, 10])
+        .style(move |_t: &iced::Theme, status| {
+            let bg = if b.active {
+                Color::from_rgba(0.941, 0.216, 0.031, 0.16)
+            } else if matches!(status, iced::widget::button::Status::Hovered) {
+                theme::BG_HOVER
+            } else {
+                theme::TRANSPARENT
+            };
+            iced::widget::button::Style {
+                background: Some(Background::Color(bg)),
+                text_color: theme::TEXT_PRIMARY,
+                border: Border {
+                    color: if b.active {
+                        theme::ACCENT_ORANGE
+                    } else {
+                        theme::TRANSPARENT
+                    },
+                    width: if b.active { 1.0 } else { 0.0 },
+                    radius: 4.0.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: false,
+            }
+        });
+    if let Some(m) = b.on_press {
+        btn = btn.on_press(m);
+    }
+    btn.into()
+}
+
+pub(crate) fn navbar<'a>(shell: &'a ShellState, w: NavbarState) -> Element<'a, Message> {
+    let logo = row![
         container(
-            row![text("NDI Off").size(11).color(theme::TEXT_MUTED),]
-                .spacing(4)
-                .align_y(Alignment::Center)
-                .padding([3, 8]),
+            text("OpenPresenter")
+                .size(14)
+                .color(theme::TEXT_PRIMARY)
+                .font(iced::Font::DEFAULT)
         )
-        .style(|_t: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(iced::Color::from_rgba(
-                0.0, 0.0, 0.0, 0.0,
-            ))),
-            border: iced::Border {
-                color: theme::BORDER_PANEL,
-                width: 1.0,
-                radius: 4.0.into(),
+        .padding([4, 10])
+    ];
+
+    let show_active = shell.current_mode == ViewMode::Show;
+    let edit_active = shell.current_mode == ViewMode::Edit;
+
+    let mode_buttons = row![
+        tool_btn(ToolButton {
+            icon: "tv",
+            label: "Show",
+            on_press: Some(Message::SwitchMode(ViewMode::Show)),
+            active: show_active,
+        }),
+        tool_btn(ToolButton {
+            icon: "pen-to-square",
+            label: "Edit",
+            on_press: Some(Message::SwitchMode(ViewMode::Edit)),
+            active: edit_active,
+        }),
+    ]
+    .spacing(2);
+
+    let left_tools = row![
+        tool_btn(ToolButton {
+            icon: "magnifying-glass",
+            label: "",
+            on_press: Some(Message::FocusSearch),
+            active: false,
+        }),
+        tool_btn(ToolButton {
+            icon: "font",
+            label: "",
+            on_press: None,
+            active: false,
+        }),
+        tool_btn(ToolButton {
+            icon: "palette",
+            label: "",
+            on_press: None,
+            active: false,
+        }),
+        tool_btn(ToolButton {
+            icon: "photo-film",
+            label: "",
+            on_press: Some(Message::ToggleMediaBin),
+            active: shell.media_bin_open,
+        }),
+        tool_btn(ToolButton {
+            icon: "glasses",
+            label: "",
+            on_press: None,
+            active: false,
+        }),
+    ]
+    .spacing(2);
+
+    let more_btn = tool_btn(ToolButton {
+        icon: "ellipsis",
+        label: "More",
+        on_press: Some(Message::ToggleTriggersPanel),
+        active: false,
+    });
+
+    let rec_active = w.recording_active;
+    let right_tools = row![
+        tool_btn(ToolButton {
+            icon: "circle",
+            label: if rec_active { "REC" } else { "Rec" },
+            on_press: Some(if rec_active {
+                Message::Recording(crate::ui::recording::Message::Stop)
+            } else {
+                Message::Recording(crate::ui::recording::Message::Start)
+            }),
+            active: rec_active,
+        }),
+        if w.ndi_active {
+            live_badge("NDI")
+        } else {
+            tool_btn(ToolButton {
+                icon: "tower-broadcast",
+                label: "NDI",
+                on_press: Some(Message::Ndi(crate::ui::ndi::Message::Toggle)),
+                active: false,
+            })
+        },
+        tool_btn(ToolButton {
+            icon: "person-shelter",
+            label: "Stage",
+            on_press: Some(Message::ToggleStageDisplay),
+            active: w.stage_active,
+        }),
+        tool_btn(ToolButton {
+            icon: "gauge",
+            label: "Props",
+            on_press: Some(Message::SelectRightDockTab(RightDockTab::Props)),
+            active: shell.right_dock_tab == RightDockTab::Props,
+        }),
+        tool_btn(ToolButton {
+            icon: "bolt",
+            label: "Triggers",
+            on_press: Some(Message::SelectRightDockTab(RightDockTab::Triggers)),
+            active: shell.right_dock_tab == RightDockTab::Triggers,
+        }),
+        tool_btn(ToolButton {
+            icon: if w.reduce_motion {
+                "toggle-off"
+            } else {
+                "toggle-on"
             },
-            ..Default::default()
-        })
-        .into()
-    };
+            label: "",
+            on_press: Some(Message::ToggleReduceMotion),
+            active: false,
+        }),
+        tool_btn(ToolButton {
+            icon: "circle-question",
+            label: "",
+            on_press: Some(Message::ToggleShortcutsOverlay),
+            active: false,
+        }),
+    ]
+    .spacing(2);
 
     let bar = row![
         logo,
+        Space::new().width(8),
+        mode_buttons,
+        Space::new().width(12),
+        left_tools,
         Space::new().width(Length::Fill),
-        edit_tab,
-        show_tab,
-        plan_tab,
-        stage_tab,
-        Space::new().width(Length::Fill),
-        ndi_badge,
-        button(
-            text(if reduce_motion {
-                "Motion Off"
-            } else {
-                "Motion On"
-            })
-            .size(11)
-            .color(if reduce_motion {
-                theme::DANGER_RED
-            } else {
-                theme::TEXT_MUTED
-            }),
-        )
-        .on_press(Message::ToggleReduceMotion)
-        .padding([4, 10])
-        .style(theme::ghost_button),
-        button(text("?").size(13).color(theme::TEXT_MUTED))
-            .on_press(Message::ToggleShortcutsOverlay)
-            .padding([4, 10])
-            .style(theme::ghost_button),
-        button(text("Audio").size(11).color(if audio_panel_visible {
-            theme::ACCENT_BLUE
-        } else {
-            theme::TEXT_MUTED
-        }),)
-        .on_press(Message::AudioTogglePanel)
-        .padding([4, 10])
-        .style(theme::ghost_button),
-        button(text("Triggers").size(11).color(if triggers_panel_open {
-            theme::ACCENT_BLUE
-        } else {
-            theme::TEXT_MUTED
-        }),)
-        .on_press(Message::ToggleTriggersPanel)
-        .padding([4, 10])
-        .style(theme::ghost_button),
-        button(
-            text(if recording_active { "REC" } else { "Rec" })
-                .size(11)
-                .color(if recording_active {
-                    theme::DANGER_RED
-                } else {
-                    theme::TEXT_MUTED
-                }),
-        )
-        .on_press(Message::ToggleRecordingPanel)
-        .padding([4, 10])
-        .style(theme::ghost_button),
+        more_btn,
+        Space::new().width(12),
+        right_tools,
     ]
-    .spacing(6)
-    .padding([0, 16])
+    .spacing(2)
+    .padding([0, 12])
     .align_y(Alignment::Center)
-    .height(44);
+    .height(46);
 
     container(bar)
         .width(Length::Fill)
         .style(theme::navbar_style)
         .into()
+}
+
+#[derive(Clone, Copy)]
+pub struct NavbarState {
+    pub ndi_active: bool,
+    pub stage_active: bool,
+    pub reduce_motion: bool,
+    pub recording_active: bool,
 }

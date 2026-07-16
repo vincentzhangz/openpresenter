@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::slides::{Background, Slide, SlideContent, TextAlignment, Transition};
+use crate::domain::{Background, Slide, SlideContent, TextAlignment, Transition};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -237,7 +237,7 @@ impl RenderPipeline {
         x: u32,
         y: u32,
         font_size: f32,
-        color: crate::slides::Color,
+        color: crate::domain::Color,
         alignment: TextAlignment,
         shadow: bool,
         outline: bool,
@@ -264,7 +264,7 @@ impl RenderPipeline {
                 y + scale,
                 scale,
                 cell_w,
-                crate::slides::Color {
+                crate::domain::Color {
                     r: 0,
                     g: 0,
                     b: 0,
@@ -286,7 +286,7 @@ impl RenderPipeline {
                         y + dy,
                         scale,
                         cell_w,
-                        crate::slides::Color {
+                        crate::domain::Color {
                             r: 0,
                             g: 0,
                             b: 0,
@@ -309,7 +309,7 @@ impl RenderPipeline {
         y: u32,
         scale: u32,
         cell_w: u32,
-        color: crate::slides::Color,
+        color: crate::domain::Color,
     ) {
         for (i, ch) in text.chars().enumerate() {
             let glyph = pixel_font(ch);

@@ -26,7 +26,7 @@ pub use dialog::{confirm_dialog, dialog_overlay};
 pub use divider::divider;
 pub use empty_state::empty_state;
 pub use error_toast::error_toast;
-pub use group_color::{GROUP_COLORS, group_color, group_label_widget};
+pub use group_color::{GROUP_COLORS, group_color, group_label_widget, group_option_color};
 pub use labeled_field::field_col;
 pub use list_item::list_item;
 pub use live_badge::live_badge;

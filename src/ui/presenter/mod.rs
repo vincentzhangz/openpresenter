@@ -1,19 +1,20 @@
 pub mod canvas;
 
-use crate::slides::{Presentation, Slide, Transition};
+use crate::domain::{Cue, Presentation, Slide, Transition};
 use crate::ui::components::{group_label_widget, live_badge as live_badge_widget, truncate};
 use crate::ui::editor::canvas::bg_to_color;
+use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message;
 use crate::ui::presenter::canvas::{next_slide_canvas_panel, presenter_canvas_panel};
 use crate::ui::theme;
 use iced::{
-    Alignment, Background, Border, Color, Element, Length,
+    Alignment, Background, Border, Color, Element, Length, Task,
     widget::{
         Column, Space, button, checkbox, column, container, row, scrollable, text, text_input,
     },
 };
 use iced_font_awesome::fa_icon_solid;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct TransitionState {
@@ -154,7 +155,7 @@ fn top_controls<'a>(
         };
         button(
             row![
-                fa_icon_solid("moon").size(12.0),
+                fa_icon_solid("moon").size(12.0_f32),
                 text(format!(" {bs_text}")).size(12),
             ]
             .align_y(iced::Alignment::Center),
@@ -165,7 +166,7 @@ fn top_controls<'a>(
     } else {
         button(
             row![
-                fa_icon_solid("moon").size(12.0),
+                fa_icon_solid("moon").size(12.0_f32),
                 text(" Black Out").size(12),
             ]
             .align_y(iced::Alignment::Center),
@@ -187,7 +188,7 @@ fn top_controls<'a>(
         };
         button(
             row![
-                fa_icon_solid(fs_icon).size(12.0),
+                fa_icon_solid(fs_icon).size(12.0_f32),
                 text(format!(" {fs_label}")).size(12),
             ]
             .align_y(iced::Alignment::Center),
@@ -205,7 +206,7 @@ fn top_controls<'a>(
     } else {
         theme::ghost_button
     };
-    let settings_btn = button(fa_icon_solid("gear").size(12.0))
+    let settings_btn = button(fa_icon_solid("gear").size(12.0_f32))
         .on_press(Message::ToggleOutputSettings)
         .padding([6, 10])
         .style(settings_style);
@@ -214,7 +215,7 @@ fn top_controls<'a>(
         button(
             row![
                 fa_icon_solid("arrow-left")
-                    .size(12.0)
+                    .size(12.0_f32)
                     .color(theme::TEXT_SECONDARY),
                 text(" Back").size(12).color(theme::TEXT_SECONDARY),
             ]
@@ -234,11 +235,11 @@ fn top_controls<'a>(
         fullscreen_btn,
         settings_btn,
         button(text(ndi_label).size(12))
-            .on_press(Message::ToggleNdi)
+            .on_press(Message::Ndi(crate::ui::ndi::Message::Toggle))
             .padding([6, 14])
             .style(ndi_style),
         button(text("Send").size(12))
-            .on_press(Message::NdiSendCurrent)
+            .on_press(Message::Ndi(crate::ui::ndi::Message::SendCurrent))
             .padding([6, 12])
             .style(theme::secondary_button),
         button(text("Clear").size(12))
@@ -247,9 +248,17 @@ fn top_controls<'a>(
             .style(theme::ghost_button),
         {
             let (rec_label, rec_msg, rec_style): (&str, Message, fn(&_, _) -> _) = if is_recording {
-                ("Stop Rec", Message::RecordingStop, theme::danger_button)
+                (
+                    "Stop Rec",
+                    Message::Recording(crate::ui::recording::Message::Stop),
+                    theme::danger_button,
+                )
             } else {
-                ("Record", Message::RecordingStart, theme::ghost_button)
+                (
+                    "Record",
+                    Message::Recording(crate::ui::recording::Message::Start),
+                    theme::ghost_button,
+                )
             };
             button(text(rec_label).size(12))
                 .on_press(rec_msg)
@@ -323,7 +332,7 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
 
     let mut groups: Vec<(Option<String>, usize, usize)> = Vec::new();
     for (i, slide) in presentation.slides.iter().enumerate() {
-        let lbl = slide.group_label.clone();
+        let lbl = slide.group.clone();
         if let Some(last) = groups.last_mut()
             && last.0 == lbl
         {
@@ -333,8 +342,8 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
         groups.push((lbl, i, 1));
     }
 
-    for (group_label, start, count) in groups {
-        if let Some(ref lbl) = group_label {
+    for (group, start, count) in groups {
+        if let Some(ref lbl) = group {
             col = col.push(Space::new().height(6));
             col = col.push(group_label_widget(lbl));
             col = col.push(Space::new().height(2));
@@ -345,18 +354,18 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
             let is_live = i == active;
             let bg_color = bg_to_color(&slide.background);
             let preview_str = match &slide.content {
-                crate::slides::SlideContent::Text { text, .. } => {
+                crate::domain::SlideContent::Text { text, .. } => {
                     if text.is_empty() {
                         "(Empty)".to_string()
                     } else {
                         truncate(text, 28)
                     }
                 }
-                crate::slides::SlideContent::Image { .. } => "\u{1F4F7} Image".to_string(),
-                crate::slides::SlideContent::Video { .. } => "\u{1F3AC} Video".to_string(),
+                crate::domain::SlideContent::Image { .. } => "\u{1F4F7} Image".to_string(),
+                crate::domain::SlideContent::Video { .. } => "\u{1F3AC} Video".to_string(),
             };
 
-            let txt_color = if let crate::slides::SlideContent::Text { style, .. } = &slide.content
+            let txt_color = if let crate::domain::SlideContent::Text { style, .. } = &slide.content
             {
                 Color::from_rgba8(
                     style.color.r,
@@ -421,7 +430,7 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
 fn info_bar<'a>(slide: &'a Slide) -> Element<'a, Message> {
     let mut row_items: Vec<Element<Message>> = Vec::new();
 
-    if let Some(ref lbl) = slide.group_label {
+    if let Some(ref lbl) = slide.group {
         row_items.push(group_label_widget(lbl));
         row_items.push(Space::new().width(10).into());
     }
@@ -537,7 +546,7 @@ fn next_panel<'a>(next: Option<&'a Slide>) -> Element<'a, Message> {
             .into(),
     };
 
-    let label: Element<Message> = match next.and_then(|s| s.group_label.as_deref()) {
+    let label: Element<Message> = match next.and_then(|s| s.group.as_deref()) {
         Some(lbl) => group_label_widget(lbl),
         None => Space::new().height(0).into(),
     };
@@ -551,4 +560,147 @@ fn next_panel<'a>(next: Option<&'a Slide>) -> Element<'a, Message> {
     .height(Length::Fill)
     .style(theme::dark_panel_style)
     .into()
+}
+
+pub(crate) fn activate_slide(w: &mut MainWindow, to_idx: usize, animate: bool) -> Task<Message> {
+    let from_slide = {
+        let Some(ref pres) = w.presenting.presentation else {
+            return Task::none();
+        };
+        if pres.slides.get(to_idx).is_none() {
+            return Task::none();
+        }
+        if animate {
+            if to_idx == w.presenting.slide_index {
+                return Task::none();
+            }
+            pres.slides.get(w.presenting.slide_index).cloned()
+        } else {
+            None
+        }
+    };
+    begin_slide_change(w, from_slide, to_idx, animate)
+}
+
+pub(crate) fn select_slide(w: &mut MainWindow, i: usize) -> Task<Message> {
+    activate_slide(w, i, true)
+}
+
+pub(crate) fn next_slide(w: &mut MainWindow) -> Task<Message> {
+    let next = {
+        let Some(ref pres) = w.presenting.presentation else {
+            return Task::none();
+        };
+        let current_i = w.presenting.slide_index;
+        let next = (current_i + 1).min(pres.slides.len().saturating_sub(1));
+        if next == current_i {
+            return Task::none();
+        }
+        next
+    };
+    activate_slide(w, next, true)
+}
+
+pub(crate) fn prev_slide(w: &mut MainWindow) -> Task<Message> {
+    let prev = {
+        if w.presenting.presentation.is_none() {
+            return Task::none();
+        }
+        let current_i = w.presenting.slide_index;
+        let prev = current_i.saturating_sub(1);
+        if prev == current_i {
+            return Task::none();
+        }
+        prev
+    };
+    activate_slide(w, prev, true)
+}
+
+pub(crate) fn animation_tick(w: &mut MainWindow) -> Task<Message> {
+    if let Some(ref mut ts) = w.presenting.transition {
+        let duration_ms = match ts.transition {
+            Transition::Fade { duration_ms }
+            | Transition::Dissolve { duration_ms }
+            | Transition::Slide { duration_ms }
+            | Transition::Push { duration_ms, .. }
+            | Transition::Zoom { duration_ms }
+            | Transition::Flip { duration_ms }
+            | Transition::Clock { duration_ms }
+            | Transition::Wipe { duration_ms, .. } => duration_ms as f32,
+            Transition::Cut => 0.0,
+        };
+        ts.progress = if duration_ms > 0.0 {
+            (ts.start.elapsed().as_millis() as f32 / duration_ms).min(1.0)
+        } else {
+            1.0
+        };
+        if ts.progress >= 1.0 {
+            w.presenting.transition = None;
+        }
+    }
+    Task::none()
+}
+
+fn queue_slide_cues(w: &MainWindow, cues: Vec<Cue>) {
+    let tx = w.triggers.manager.sender();
+    for cue in cues {
+        if !cue.enabled {
+            continue;
+        }
+        if cue.delay_ms == 0 {
+            let _ = tx.try_send(cue.action.clone());
+        } else {
+            let delayed_tx = tx.clone();
+            let action = cue.action.clone();
+            let delay_ms = cue.delay_ms;
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                let _ = delayed_tx.send(action).await;
+            });
+        }
+    }
+}
+
+fn begin_slide_change(
+    w: &mut MainWindow,
+    from_slide: Option<Slide>,
+    to_idx: usize,
+    animate: bool,
+) -> Task<Message> {
+    let (transition, ndi_slide, cues) = {
+        let Some(ref pres) = w.presenting.presentation else {
+            return Task::none();
+        };
+        let Some(target) = pres.slides.get(to_idx) else {
+            return Task::none();
+        };
+        (target.transition, target.clone(), target.cues.clone())
+    };
+
+    w.presenting.slide_context_index = None;
+    w.presenting.group_submenu = false;
+    w.presenting.slide_index = to_idx;
+
+    if animate && !matches!(transition, Transition::Cut) && !w.ui.reduce_motion {
+        if let Some(from_slide) = from_slide {
+            w.presenting.transition = Some(TransitionState {
+                from_slide,
+                transition,
+                progress: 0.0,
+                start: Instant::now(),
+            });
+        } else {
+            w.presenting.transition = None;
+        }
+    } else {
+        w.presenting.transition = None;
+    }
+
+    if let Some(ref ndi) = w.presenting.ndi_output {
+        ndi.set_slide(ndi_slide);
+    }
+
+    crate::ui::video::on_presenter_slide_changed(w, to_idx);
+    queue_slide_cues(w, cues);
+    Task::none()
 }

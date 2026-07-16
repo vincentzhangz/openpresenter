@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use super::{FrameRate, NdiSender};
 use crate::Result;
+use crate::domain::{Slide, Transition};
 use crate::media::decoder::RgbaFrame;
 use crate::render::{Frame, RenderPipeline, transition_frames};
-use crate::slides::{Slide, Transition};
 
 #[derive(Clone)]
 pub enum OutputCommand {

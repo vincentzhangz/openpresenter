@@ -1,11 +1,11 @@
-use super::TriggerAction;
+use super::Action;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MacroStep {
     pub delay_ms: u64,
-    pub action: TriggerAction,
+    pub action: Action,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ impl Macro {
         }
     }
 
-    pub fn add_step(&mut self, delay_ms: u64, action: TriggerAction) {
+    pub fn add_step(&mut self, delay_ms: u64, action: Action) {
         self.steps.push(MacroStep { delay_ms, action });
     }
 
@@ -36,10 +36,7 @@ impl Macro {
         }
     }
 
-    pub fn spawn(
-        &self,
-        tx: tokio::sync::mpsc::Sender<TriggerAction>,
-    ) -> tokio::task::JoinHandle<()> {
+    pub fn spawn(&self, tx: tokio::sync::mpsc::Sender<Action>) -> tokio::task::JoinHandle<()> {
         let steps = self.steps.clone();
         let looping = self.looping;
         tokio::spawn(async move {
@@ -84,7 +81,7 @@ impl MacroManager {
         self.macros.iter_mut().find(|m| m.id == id)
     }
 
-    pub fn run(&mut self, id: &str, tx: tokio::sync::mpsc::Sender<TriggerAction>) {
+    pub fn run(&mut self, id: &str, tx: tokio::sync::mpsc::Sender<Action>) {
         self.stop(id);
         if let Some(m) = self.get(id) {
             let handle = m.spawn(tx);
@@ -106,7 +103,7 @@ impl MacroManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::triggers::TriggerAction;
+    use crate::triggers::Action;
 
     #[test]
     fn macro_new_has_empty_steps_and_not_looping() {
@@ -119,8 +116,8 @@ mod tests {
     #[test]
     fn macro_add_step_appends() {
         let mut m = Macro::new("Test");
-        m.add_step(500, TriggerAction::NextSlide);
-        m.add_step(0, TriggerAction::ClearOutput);
+        m.add_step(500, Action::NextSlide);
+        m.add_step(0, Action::ClearOutput);
         assert_eq!(m.steps.len(), 2);
         assert_eq!(m.steps[0].delay_ms, 500);
         assert_eq!(m.steps[1].delay_ms, 0);
@@ -129,8 +126,8 @@ mod tests {
     #[test]
     fn macro_remove_step_by_index() {
         let mut m = Macro::new("Test");
-        m.add_step(100, TriggerAction::NextSlide);
-        m.add_step(200, TriggerAction::PrevSlide);
+        m.add_step(100, Action::NextSlide);
+        m.add_step(200, Action::PrevSlide);
         m.remove_step(0);
         assert_eq!(m.steps.len(), 1);
         assert_eq!(m.steps[0].delay_ms, 200);
@@ -139,7 +136,7 @@ mod tests {
     #[test]
     fn macro_remove_step_out_of_bounds_is_noop() {
         let mut m = Macro::new("Test");
-        m.add_step(100, TriggerAction::NextSlide);
+        m.add_step(100, Action::NextSlide);
         m.remove_step(99);
         assert_eq!(m.steps.len(), 1);
     }

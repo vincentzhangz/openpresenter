@@ -2,23 +2,10 @@ pub mod automation;
 pub mod http;
 pub mod osc;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TriggerAction {
-    NextSlide,
-    PrevSlide,
-    GotoSlide(usize),
-    BlackScreen(bool),
-    ClearOutput,
-    TriggerProp(String),
-    StartTimer,
-    StopTimer,
-    ResetTimer,
-}
+pub use crate::domain::Action;
 
 pub struct TriggerManager {
-    sender: tokio::sync::mpsc::Sender<TriggerAction>,
+    sender: tokio::sync::mpsc::Sender<Action>,
 
     http_handle: Option<tokio::task::JoinHandle<()>>,
     http_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
@@ -50,13 +37,13 @@ impl Default for TriggerManager {
 }
 
 impl TriggerManager {
-    pub fn subscribe(&mut self) -> tokio::sync::mpsc::Receiver<TriggerAction> {
+    pub fn subscribe(&mut self) -> tokio::sync::mpsc::Receiver<Action> {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         self.sender = tx;
         rx
     }
 
-    pub fn sender(&self) -> tokio::sync::mpsc::Sender<TriggerAction> {
+    pub fn sender(&self) -> tokio::sync::mpsc::Sender<Action> {
         self.sender.clone()
     }
 

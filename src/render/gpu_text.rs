@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::slides::{TextAlignment, TextRun, TextStyle};
+use crate::domain::{TextAlignment, TextRun, TextStyle};
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer, Viewport,
@@ -28,12 +28,13 @@ pub struct GpuTextRenderer {
 
 impl GpuTextRenderer {
     pub async fn new() -> Result<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: None,
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .map_err(|e| anyhow::anyhow!("No suitable GPU adapter found: {:?}", e))?;
@@ -89,11 +90,7 @@ impl GpuTextRenderer {
             &mut self.font_system,
             Metrics::new(style.font_size, line_height),
         );
-        buffer.set_size(
-            &mut self.font_system,
-            Some(width as f32),
-            Some(height as f32),
-        );
+        buffer.set_size(Some(width as f32), Some(height as f32));
 
         let base_family_name = style.font_family.as_str();
         let base_family = if base_family_name.is_empty() || base_family_name == "Arial" {
@@ -118,7 +115,6 @@ impl GpuTextRenderer {
                 })
                 .collect();
             buffer.set_rich_text(
-                &mut self.font_system,
                 transformed_runs
                     .iter()
                     .map(|(s, a)| (s.as_str(), a.clone())),
@@ -127,13 +123,7 @@ impl GpuTextRenderer {
                 None,
             );
         } else {
-            buffer.set_text(
-                &mut self.font_system,
-                &display_text,
-                &base_attrs,
-                Shaping::Advanced,
-                None,
-            );
+            buffer.set_text(&display_text, &base_attrs, Shaping::Advanced, None);
         }
         buffer.shape_until_scroll(&mut self.font_system, false);
 
@@ -257,7 +247,9 @@ impl GpuTextRenderer {
             .poll(wgpu::PollType::wait_indefinitely())
             .map_err(|e| anyhow::anyhow!("wgpu poll error: {:?}", e))?;
 
-        let mapped = buf_slice.get_mapped_range();
+        let mapped = buf_slice
+            .get_mapped_range()
+            .map_err(|e| anyhow::anyhow!("wgpu map error: {:?}", e))?;
 
         let mut out = vec![0u8; (width * height * 4) as usize];
         for row in 0..height {

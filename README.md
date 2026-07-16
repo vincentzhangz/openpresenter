@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fvincentzhangz%2F98482a1448f7b055a193c05f9acf683b%2Fraw%2Fopenpresenter-junit-tests.json)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fvincentzhangz%2F98482a1448f7b055a193c05f9acf683b%2Fraw%2Fopenpresenter-lcov-coverage.json)](https://github.com/vincentzhangz/openpresenter/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.97%2B-orange.svg)](https://www.rust-lang.org/)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
 > [!WARNING]
@@ -25,6 +25,7 @@ OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rus
 - [Configuration](#configuration)
 - [Development](#development)
 - [Contributing](#contributing)
+- [Security](#security)
 - [Tech Stack](#tech-stack)
 - [License](#license)
 
@@ -55,6 +56,7 @@ OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rus
 | **HTTP triggers**     | axum 0.8 REST API for remote slide control (`/api/slides/next`, etc.)               |
 | **OSC triggers**      | rosc-powered Open Sound Control listener (`/slide/next`, `/black`, etc.)            |
 | **Macros**            | Scheduled trigger sequences with optional looping                                   |
+| **Slide cues**        | Per-slide trigger actions (immediate or delayed) fired when a slide goes live       |
 | **Themes**            | Reusable visual themes stored in the database                                       |
 | **Service planning**  | Service plan with ordered items backed by SQLite                                    |
 | **Bible**             | Bible verse database with FTS5 search (translations, books, chapters)               |
@@ -79,18 +81,35 @@ OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rus
 
 ```
 src/
-├── slides/         # Core data model — Presentation, Slide, Song, Verse, Layer, Prop
+├── domain/         # Core data model (was `slides/`) — Presentation, Slide, Object,
+│                   #   Cue, Action, Playlist, Prop, Look, SlideTheme, Song, Bible*
 ├── db/             # SQLite persistence (rusqlite) with versioned migrations
+├── services/       # Business logic over repositories; pure orchestration (no iced)
 ├── render/         # Software BGRA rasteriser + GPU glyphon/wgpu text renderer
 ├── ndi/            # FFI bindings to NDI SDK v6; async sender loop
-├── import/         # OpenLyrics XML + OPP zip import/export
 ├── media/          # FFmpeg video decoder, rodio audio player
 ├── recording/      # H.264 recording pipeline via FFmpeg encoder
 ├── triggers/       # HTTP (axum), OSC (rosc), and automation macro subsystems
-├── output/         # Output window management
+├── output/         # Multi-screen output / NDI output-window management
+├── import/         # OpenLyrics XML + OPP zip import/export
 ├── config.rs       # TOML config with platform-aware data directories
-└── ui/             # iced 0.14 application — all UI components and message handlers
+└── ui/             # iced 0.14 application
+    ├── main_window.rs  # Root window: update / view / subscription / error handling
+    ├── messages.rs     # Root Message + ViewMode / SidebarTab / RightDockTab enums
+    ├── state.rs        # Per-feature State structs (Editor, Presenting, Shell, …)
+    ├── theme.rs        # Dark charcoal palette + orange accent, container/button styles
+    ├── shell/          # Unified ProPresenter-style layout: left_rail, center,
+    │                   #   right_dock, media_bin, show, edit, unified
+    └── <feature>/      # Per-feature modules (playlist, slides, layers, presenter,
+        (e.g. slides,    #   props, audio, library, themes, triggers, recording, bible,
+         layers, …)     #   songs, output, ndi, stage, …) each owning a nested `Message`
+                        #   enum that auto-wraps into the root via `impl From`
 ```
+
+**Layer dependency direction (acyclic):** `ui → services → db / domain`;
+`ui → triggers`; `ui → render / media / ndi`. Nothing outside `ui` may depend on
+`iced`. New editor/feature messages use nested `Message` enums wired by `From`,
+so the root `Message` enum is not expanded with new feature variants.
 
 **Thread model**
 
@@ -111,7 +130,7 @@ All cross-thread communication uses `tokio::sync::mpsc`; the UI receives trigger
 ### macOS (primary platform)
 
 - **Xcode Command Line Tools** — `xcode-select --install`
-- **Rust 1.93+** — [rustup.rs](https://rustup.rs/)
+- **Rust 1.97+** — [rustup.rs](https://rustup.rs/)
 - **FFmpeg 7+** — `brew install ffmpeg`
 - **pkg-config** — `brew install pkgconf`
 - **NDI SDK v6** _(optional — stub mode available without it)_ — [ndi.video/for-developers](https://ndi.video/for-developers/ndi-sdk/)
@@ -128,7 +147,7 @@ sudo apt-get install -y \
 ### Windows
 
 - Visual Studio Build Tools 2022
-- Rust 1.93+ via rustup
+- Rust 1.97+ via rustup
 - [vcpkg](https://vcpkg.io/) for FFmpeg (`vcpkg install ffmpeg:x64-windows`)
 - NDI SDK for Windows
 
@@ -284,7 +303,7 @@ Contributions are welcome. Please read the guidelines below before opening a pul
 
 - **Bug reports**: Include OS, `rustc --version`, steps to reproduce, and full error output.
 - **Feature requests**: Describe the use case and the problem it solves.
-- **Security issues**: Contact the maintainer directly rather than filing a public issue.
+- **Security issues**: Report privately via GitHub's security advisory workflow — see [SECURITY.md](SECURITY.md). Do **not** file a public issue.
 
 ### Pull Request Checklist
 

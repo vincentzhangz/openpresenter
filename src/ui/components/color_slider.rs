@@ -17,7 +17,7 @@ pub fn color_channel_slider<'a>(
     row![
         text(label).size(11).color(theme::TEXT_MUTED).width(14),
         slider(0.0..=255.0, value as f32, move |v| on_change(v as u8))
-            .step(1.0)
+            .step(1.0_f32)
             .width(Length::Fill),
         text(format!("{value}"))
             .size(11)

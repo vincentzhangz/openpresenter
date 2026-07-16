@@ -1,5 +1,5 @@
-use crate::slides::{
-    Background, ImageFit, LayerContent, ShapeType, Slide, SlideContent, TextAlignment, Transition,
+use crate::domain::{
+    Background, ImageFit, ObjectContent, ShapeType, Slide, SlideContent, TextAlignment, Transition,
 };
 use crate::ui::editor::canvas::{
     CANVAS_H, image_widget_panel, image_widget_panel_handle, letterbox,
@@ -418,7 +418,7 @@ fn draw_slide(
         let ry = cy - lh / 2.0;
 
         match &layer.content {
-            LayerContent::Text {
+            ObjectContent::Text {
                 text: content,
                 style,
                 ..
@@ -579,7 +579,7 @@ fn draw_slide(
                 });
             }
 
-            LayerContent::Shape {
+            ObjectContent::Shape {
                 shape_type,
                 fill,
                 stroke_color,
@@ -665,7 +665,7 @@ fn draw_slide(
                 }
             }
 
-            LayerContent::Image { .. } | LayerContent::Video { .. } => {}
+            ObjectContent::Image { .. } | ObjectContent::Video { .. } => {}
         }
     }
 }

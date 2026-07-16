@@ -1,5 +1,6 @@
-use crate::slides::{Background, ImageFit, LayerContent, ShapeType, Slide, SlideContent};
+use crate::domain::{Background, ImageFit, ObjectContent, ShapeType, Slide, SlideContent};
 use crate::ui::messages::Message;
+use crate::ui::{layers, slides};
 use iced::{
     Background as IcedBg, Border, Color, ContentFit, Element, Event, Font, Length, Pixels, Point,
     Rectangle, Renderer, Size, Theme, alignment, font, mouse,
@@ -14,16 +15,92 @@ use iced::{
 pub const CANVAS_W: f32 = 960.0;
 pub const CANVAS_H: f32 = 540.0;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
+enum ResizeHandle {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DragAction {
+    Move,
+    Resize(ResizeHandle),
+}
+
+#[derive(Debug, Clone)]
 pub struct CanvasState {
     is_dragging: bool,
     drag_start_mouse: Option<Point>,
     drag_start_text: (f32, f32),
+    drag_start_size: (f32, f32),
     dragging_layer: Option<usize>,
+    drag_action: Option<DragAction>,
+}
+
+impl Default for CanvasState {
+    fn default() -> Self {
+        Self {
+            is_dragging: false,
+            drag_start_mouse: None,
+            drag_start_text: (0.0, 0.0),
+            drag_start_size: (0.0, 0.0),
+            dragging_layer: None,
+            drag_action: None,
+        }
+    }
 }
 
 pub struct SlideProgram {
     pub slide: Option<Slide>,
+    pub selected_layer_index: Option<usize>,
+}
+
+fn layer_hit_test(layer: &crate::domain::Object, x: f32, y: f32) -> bool {
+    let lx = layer.position_x - layer.width / 2.0;
+    let ly = layer.position_y - layer.height / 2.0;
+    x >= lx && x <= lx + layer.width && y >= ly && y <= ly + layer.height
+}
+
+fn layer_handle_points(layer: &crate::domain::Object) -> [(ResizeHandle, Point); 8] {
+    let left = layer.position_x - layer.width / 2.0;
+    let right = layer.position_x + layer.width / 2.0;
+    let top = layer.position_y - layer.height / 2.0;
+    let bottom = layer.position_y + layer.height / 2.0;
+    let mid_x = layer.position_x;
+    let mid_y = layer.position_y;
+    [
+        (ResizeHandle::NW, Point::new(left, top)),
+        (ResizeHandle::N, Point::new(mid_x, top)),
+        (ResizeHandle::NE, Point::new(right, top)),
+        (ResizeHandle::E, Point::new(right, mid_y)),
+        (ResizeHandle::SE, Point::new(right, bottom)),
+        (ResizeHandle::S, Point::new(mid_x, bottom)),
+        (ResizeHandle::SW, Point::new(left, bottom)),
+        (ResizeHandle::W, Point::new(left, mid_y)),
+    ]
+}
+
+fn hit_resize_handle(
+    layer: &crate::domain::Object,
+    x: f32,
+    y: f32,
+    slide_w: f32,
+    slide_h: f32,
+) -> Option<ResizeHandle> {
+    let rx = (7.0 / slide_w).max(0.003);
+    let ry = (7.0 / slide_h).max(0.003);
+    for (handle, p) in layer_handle_points(layer) {
+        if (x - p.x).abs() <= rx && (y - p.y).abs() <= ry {
+            return Some(handle);
+        }
+    }
+    None
 }
 
 impl canvas::Program<Message> for SlideProgram {
@@ -54,25 +131,42 @@ impl canvas::Program<Message> for SlideProgram {
                     if layers.is_empty() {
                         return None;
                     }
+
+                    if let Some(sel_idx) = self.selected_layer_index
+                        && let Some(layer) = layers.get(sel_idx)
+                        && layer.visible
+                        && !layer.locked
+                        && let Some(handle) =
+                            hit_resize_handle(layer, norm_x, norm_y, slide_w, slide_h)
+                    {
+                        state.is_dragging = true;
+                        state.drag_start_mouse = Some(Point::new(norm_x, norm_y));
+                        state.drag_start_text = (layer.position_x, layer.position_y);
+                        state.drag_start_size = (layer.width, layer.height);
+                        state.dragging_layer = Some(sel_idx);
+                        state.drag_action = Some(DragAction::Resize(handle));
+                        return Some(Action::publish(Message::from(
+                            layers::Message::LayerDragStarted(sel_idx),
+                        )));
+                    }
+
                     let mut sorted = layers.iter().enumerate().collect::<Vec<_>>();
-                    sorted.sort_by(|a, b| b.1.z_order.cmp(&a.1.z_order));
+                    sorted.sort_by_key(|b| std::cmp::Reverse(b.1.z_order));
 
                     for (idx, layer) in sorted {
                         if !layer.visible || layer.locked {
                             continue;
                         }
-                        let lx = layer.position_x - layer.width / 2.0;
-                        let ly = layer.position_y - layer.height / 2.0;
-                        if norm_x >= lx
-                            && norm_x <= lx + layer.width
-                            && norm_y >= ly
-                            && norm_y <= ly + layer.height
-                        {
+                        if layer_hit_test(layer, norm_x, norm_y) {
                             state.is_dragging = true;
                             state.drag_start_mouse = Some(Point::new(norm_x, norm_y));
                             state.drag_start_text = (layer.position_x, layer.position_y);
+                            state.drag_start_size = (layer.width, layer.height);
                             state.dragging_layer = Some(idx);
-                            return Some(Action::publish(Message::LayerDragStarted(idx)));
+                            state.drag_action = Some(DragAction::Move);
+                            return Some(Action::publish(Message::from(
+                                layers::Message::LayerDragStarted(idx),
+                            )));
                         }
                     }
 
@@ -80,8 +174,12 @@ impl canvas::Program<Message> for SlideProgram {
                         state.is_dragging = true;
                         state.drag_start_mouse = Some(Point::new(norm_x, norm_y));
                         state.drag_start_text = (style.position_x, style.position_y);
+                        state.drag_start_size = (0.0, 0.0);
                         state.dragging_layer = None;
-                        return Some(Action::publish(Message::TextDragStarted));
+                        state.drag_action = None;
+                        return Some(Action::publish(Message::from(
+                            slides::Message::TextDragStarted,
+                        )));
                     }
                 }
                 None
@@ -92,12 +190,49 @@ impl canvas::Program<Message> for SlideProgram {
                 let norm_x = ((pos.x - off_x) / slide_w).clamp(0.0, 1.0);
                 let norm_y = ((pos.y - off_y) / slide_h).clamp(0.0, 1.0);
                 if let Some(start) = state.drag_start_mouse {
-                    let new_x = (state.drag_start_text.0 + norm_x - start.x).clamp(0.0, 1.0);
-                    let new_y = (state.drag_start_text.1 + norm_y - start.y).clamp(0.0, 1.0);
-                    let msg = if state.dragging_layer.is_some() {
-                        Message::LayerDragged(Point::new(new_x, new_y))
-                    } else {
-                        Message::TextDragged(Point::new(new_x, new_y))
+                    let msg = match (state.dragging_layer, state.drag_action) {
+                        (Some(_), Some(DragAction::Move)) => {
+                            let new_x =
+                                (state.drag_start_text.0 + norm_x - start.x).clamp(0.0, 1.0);
+                            let new_y =
+                                (state.drag_start_text.1 + norm_y - start.y).clamp(0.0, 1.0);
+                            Message::from(layers::Message::LayerDragged(Point::new(new_x, new_y)))
+                        }
+                        (Some(_), Some(DragAction::Resize(handle))) => {
+                            let mut width = state.drag_start_size.0;
+                            let mut height = state.drag_start_size.1;
+                            let center_x = state.drag_start_text.0;
+                            let center_y = state.drag_start_text.1;
+
+                            match handle {
+                                ResizeHandle::N | ResizeHandle::S => {
+                                    height = (2.0 * (norm_y - center_y).abs()).clamp(0.02, 1.0);
+                                }
+                                ResizeHandle::E | ResizeHandle::W => {
+                                    width = (2.0 * (norm_x - center_x).abs()).clamp(0.02, 1.0);
+                                }
+                                ResizeHandle::NE
+                                | ResizeHandle::SE
+                                | ResizeHandle::SW
+                                | ResizeHandle::NW => {
+                                    width = (2.0 * (norm_x - center_x).abs()).clamp(0.02, 1.0);
+                                    height = (2.0 * (norm_y - center_y).abs()).clamp(0.02, 1.0);
+                                }
+                            }
+
+                            Message::from(layers::Message::LayerResized {
+                                position: Point::new(center_x, center_y),
+                                width,
+                                height,
+                            })
+                        }
+                        _ => {
+                            let new_x =
+                                (state.drag_start_text.0 + norm_x - start.x).clamp(0.0, 1.0);
+                            let new_y =
+                                (state.drag_start_text.1 + norm_y - start.y).clamp(0.0, 1.0);
+                            Message::from(slides::Message::TextDragged(Point::new(new_x, new_y)))
+                        }
                     };
                     return Some(Action::publish(msg));
                 }
@@ -107,10 +242,20 @@ impl canvas::Program<Message> for SlideProgram {
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                 if state.is_dragging =>
             {
+                let was_layer_drag = state.dragging_layer.is_some();
                 state.is_dragging = false;
                 state.drag_start_mouse = None;
                 state.dragging_layer = None;
-                Some(Action::publish(Message::TextDragEnded))
+                state.drag_action = None;
+                if was_layer_drag {
+                    Some(Action::publish(Message::from(
+                        layers::Message::LayerDragEnded,
+                    )))
+                } else {
+                    Some(Action::publish(Message::from(
+                        slides::Message::TextDragEnded,
+                    )))
+                }
             }
 
             _ => None,
@@ -130,7 +275,7 @@ impl canvas::Program<Message> for SlideProgram {
         frame.fill_rectangle(
             Point::ORIGIN,
             bounds.size(),
-            Color::from_rgb(0.10, 0.10, 0.10),
+            Color::from_rgb(0.38, 0.40, 0.43),
         );
 
         let Some(slide) = &self.slide else {
@@ -159,7 +304,7 @@ impl canvas::Program<Message> for SlideProgram {
             let ly = cy - lh / 2.0;
 
             match &layer.content {
-                LayerContent::Text {
+                ObjectContent::Text {
                     text: content,
                     style,
                     ..
@@ -186,9 +331,9 @@ impl canvas::Program<Message> for SlideProgram {
                         ..Font::DEFAULT
                     };
                     let align_x = match style.alignment {
-                        crate::slides::TextAlignment::Left => text::Alignment::Left,
-                        crate::slides::TextAlignment::Center => text::Alignment::Center,
-                        crate::slides::TextAlignment::Right => text::Alignment::Right,
+                        crate::domain::TextAlignment::Left => text::Alignment::Left,
+                        crate::domain::TextAlignment::Center => text::Alignment::Center,
+                        crate::domain::TextAlignment::Right => text::Alignment::Right,
                     };
                     if style.glow_enabled && style.glow_radius > 0.0 {
                         let glow_steps = 8;
@@ -318,7 +463,7 @@ impl canvas::Program<Message> for SlideProgram {
                     });
                 }
 
-                LayerContent::Shape {
+                ObjectContent::Shape {
                     shape_type,
                     fill,
                     stroke_color,
@@ -400,7 +545,42 @@ impl canvas::Program<Message> for SlideProgram {
                     }
                 }
 
-                LayerContent::Image { .. } | LayerContent::Video { .. } => {}
+                ObjectContent::Image { .. } | ObjectContent::Video { .. } => {}
+            }
+        }
+
+        if let Some(sel_idx) = self.selected_layer_index
+            && let Some(layer) = layers.get(sel_idx)
+            && layer.visible
+        {
+            let cx = off_x + layer.position_x * slide_w;
+            let cy = off_y + layer.position_y * slide_h;
+            let lw = layer.width * slide_w;
+            let lh = layer.height * slide_h;
+            let lx = cx - lw / 2.0;
+            let ly = cy - lh / 2.0;
+
+            let rect = Path::rectangle(Point::new(lx, ly), Size::new(lw, lh));
+            frame.stroke(
+                &rect,
+                canvas::Stroke::default()
+                    .with_color(Color::from_rgb(0.2, 0.42, 1.0))
+                    .with_width(1.5),
+            );
+
+            let handle_size = 7.0;
+            for (_, p) in layer_handle_points(layer) {
+                let hx = off_x + p.x * slide_w - handle_size / 2.0;
+                let hy = off_y + p.y * slide_h - handle_size / 2.0;
+                let hrect =
+                    Path::rectangle(Point::new(hx, hy), Size::new(handle_size, handle_size));
+                frame.fill(&hrect, Color::WHITE);
+                frame.stroke(
+                    &hrect,
+                    canvas::Stroke::default()
+                        .with_color(Color::from_rgb(0.2, 0.42, 1.0))
+                        .with_width(1.0),
+                );
             }
         }
 
@@ -427,16 +607,17 @@ impl canvas::Program<Message> for SlideProgram {
                 let norm_x = (pos.x - off_x) / slide_w;
                 let norm_y = (pos.y - off_y) / slide_h;
                 let layers = slide.effective_layers();
+                if let Some(sel_idx) = self.selected_layer_index
+                    && let Some(layer) = layers.get(sel_idx)
+                    && hit_resize_handle(layer, norm_x, norm_y, slide_w, slide_h).is_some()
+                {
+                    return mouse::Interaction::Crosshair;
+                }
                 let any_hit = layers.iter().any(|l| {
                     if !l.visible || l.locked {
                         return false;
                     }
-                    let lx = l.position_x - l.width / 2.0;
-                    let ly = l.position_y - l.height / 2.0;
-                    norm_x >= lx
-                        && norm_x <= lx + l.width
-                        && norm_y >= ly
-                        && norm_y <= ly + l.height
+                    layer_hit_test(l, norm_x, norm_y)
                 });
                 if any_hit {
                     return mouse::Interaction::Crosshair;
@@ -450,6 +631,7 @@ impl canvas::Program<Message> for SlideProgram {
 pub fn canvas_panel<'a>(
     slide: Option<&'a Slide>,
     video_frame: Option<&'a iced::widget::image::Handle>,
+    selected_layer_index: Option<usize>,
 ) -> Element<'a, Message> {
     if let Some(s) = slide {
         match &s.content {
@@ -471,6 +653,7 @@ pub fn canvas_panel<'a>(
     }
     Canvas::new(SlideProgram {
         slide: slide.cloned(),
+        selected_layer_index,
     })
     .width(Length::Fill)
     .height(Length::Fill)

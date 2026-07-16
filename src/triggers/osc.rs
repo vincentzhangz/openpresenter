@@ -1,11 +1,8 @@
-use super::TriggerAction;
+use super::Action;
 use rosc::{OscPacket, OscType};
 use tokio::net::UdpSocket;
 
-pub async fn run_listener(
-    port: u16,
-    tx: tokio::sync::mpsc::Sender<TriggerAction>,
-) -> anyhow::Result<()> {
+pub async fn run_listener(port: u16, tx: tokio::sync::mpsc::Sender<Action>) -> anyhow::Result<()> {
     let socket = UdpSocket::bind(format!("0.0.0.0:{port}")).await?;
     let mut buf = [0u8; 65536];
     loop {
@@ -30,10 +27,10 @@ pub async fn run_listener(
     }
 }
 
-fn dispatch_osc(msg: &rosc::OscMessage) -> Option<TriggerAction> {
+fn dispatch_osc(msg: &rosc::OscMessage) -> Option<Action> {
     match msg.addr.as_str() {
-        "/slide/next" => Some(TriggerAction::NextSlide),
-        "/slide/prev" => Some(TriggerAction::PrevSlide),
+        "/slide/next" => Some(Action::NextSlide),
+        "/slide/prev" => Some(Action::PrevSlide),
         "/slide/goto" => {
             let idx = msg
                 .args
@@ -44,7 +41,7 @@ fn dispatch_osc(msg: &rosc::OscMessage) -> Option<TriggerAction> {
                     _ => None,
                 })
                 .unwrap_or(0);
-            Some(TriggerAction::GotoSlide(idx))
+            Some(Action::GotoSlide(idx))
         }
         "/black" => {
             let on = msg
@@ -56,12 +53,12 @@ fn dispatch_osc(msg: &rosc::OscMessage) -> Option<TriggerAction> {
                     _ => false,
                 })
                 .unwrap_or(false);
-            Some(TriggerAction::BlackScreen(on))
+            Some(Action::BlackScreen(on))
         }
-        "/clear" => Some(TriggerAction::ClearOutput),
-        "/timer/start" => Some(TriggerAction::StartTimer),
-        "/timer/stop" => Some(TriggerAction::StopTimer),
-        "/timer/reset" => Some(TriggerAction::ResetTimer),
+        "/clear" => Some(Action::ClearOutput),
+        "/timer/start" => Some(Action::StartTimer),
+        "/timer/stop" => Some(Action::StopTimer),
+        "/timer/reset" => Some(Action::ResetTimer),
         _ => None,
     }
 }
@@ -82,7 +79,7 @@ mod tests {
     fn dispatch_next_slide() {
         assert!(matches!(
             dispatch_osc(&msg("/slide/next", vec![])),
-            Some(TriggerAction::NextSlide)
+            Some(Action::NextSlide)
         ));
     }
 
@@ -90,57 +87,57 @@ mod tests {
     fn dispatch_prev_slide() {
         assert!(matches!(
             dispatch_osc(&msg("/slide/prev", vec![])),
-            Some(TriggerAction::PrevSlide)
+            Some(Action::PrevSlide)
         ));
     }
 
     #[test]
     fn dispatch_goto_slide_int_arg() {
         let action = dispatch_osc(&msg("/slide/goto", vec![OscType::Int(3)]));
-        assert!(matches!(action, Some(TriggerAction::GotoSlide(3))));
+        assert!(matches!(action, Some(Action::GotoSlide(3))));
     }
 
     #[test]
     fn dispatch_goto_slide_float_arg() {
         let action = dispatch_osc(&msg("/slide/goto", vec![OscType::Float(5.0)]));
-        assert!(matches!(action, Some(TriggerAction::GotoSlide(5))));
+        assert!(matches!(action, Some(Action::GotoSlide(5))));
     }
 
     #[test]
     fn dispatch_goto_slide_no_arg_defaults_to_zero() {
         let action = dispatch_osc(&msg("/slide/goto", vec![]));
-        assert!(matches!(action, Some(TriggerAction::GotoSlide(0))));
+        assert!(matches!(action, Some(Action::GotoSlide(0))));
     }
 
     #[test]
     fn dispatch_black_int_nonzero_is_true() {
         let action = dispatch_osc(&msg("/black", vec![OscType::Int(1)]));
-        assert!(matches!(action, Some(TriggerAction::BlackScreen(true))));
+        assert!(matches!(action, Some(Action::BlackScreen(true))));
     }
 
     #[test]
     fn dispatch_black_int_zero_is_false() {
         let action = dispatch_osc(&msg("/black", vec![OscType::Int(0)]));
-        assert!(matches!(action, Some(TriggerAction::BlackScreen(false))));
+        assert!(matches!(action, Some(Action::BlackScreen(false))));
     }
 
     #[test]
     fn dispatch_black_bool_true() {
         let action = dispatch_osc(&msg("/black", vec![OscType::Bool(true)]));
-        assert!(matches!(action, Some(TriggerAction::BlackScreen(true))));
+        assert!(matches!(action, Some(Action::BlackScreen(true))));
     }
 
     #[test]
     fn dispatch_black_no_arg_defaults_false() {
         let action = dispatch_osc(&msg("/black", vec![]));
-        assert!(matches!(action, Some(TriggerAction::BlackScreen(false))));
+        assert!(matches!(action, Some(Action::BlackScreen(false))));
     }
 
     #[test]
     fn dispatch_clear() {
         assert!(matches!(
             dispatch_osc(&msg("/clear", vec![])),
-            Some(TriggerAction::ClearOutput)
+            Some(Action::ClearOutput)
         ));
     }
 
@@ -148,7 +145,7 @@ mod tests {
     fn dispatch_timer_start() {
         assert!(matches!(
             dispatch_osc(&msg("/timer/start", vec![])),
-            Some(TriggerAction::StartTimer)
+            Some(Action::StartTimer)
         ));
     }
 
@@ -156,7 +153,7 @@ mod tests {
     fn dispatch_timer_stop() {
         assert!(matches!(
             dispatch_osc(&msg("/timer/stop", vec![])),
-            Some(TriggerAction::StopTimer)
+            Some(Action::StopTimer)
         ));
     }
 
@@ -164,7 +161,7 @@ mod tests {
     fn dispatch_timer_reset() {
         assert!(matches!(
             dispatch_osc(&msg("/timer/reset", vec![])),
-            Some(TriggerAction::ResetTimer)
+            Some(Action::ResetTimer)
         ));
     }
 

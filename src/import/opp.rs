@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::slides::{Background, LayerContent, Presentation};
+use crate::domain::{Background, ObjectContent, Presentation};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OppMeta {
@@ -115,8 +115,8 @@ fn collect_media_paths(presentation: &Presentation) -> Vec<String> {
         }
         for layer in &slide.layers {
             match &layer.content {
-                LayerContent::Image { path, .. } => paths.push(path.clone()),
-                LayerContent::Video { path, .. } => paths.push(path.clone()),
+                ObjectContent::Image { path, .. } => paths.push(path.clone()),
+                ObjectContent::Video { path, .. } => paths.push(path.clone()),
                 _ => {}
             }
         }
@@ -146,7 +146,7 @@ fn rewrite_media_paths(
         }
         for layer in &mut slide.layers {
             match &mut layer.content {
-                LayerContent::Image { path, .. } | LayerContent::Video { path, .. } => {
+                ObjectContent::Image { path, .. } | ObjectContent::Video { path, .. } => {
                     let filename = std::path::Path::new(&*path)
                         .file_name()
                         .and_then(|n| n.to_str())
@@ -165,7 +165,7 @@ fn rewrite_media_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::slides::{
+    use crate::domain::{
         Background, Color, Presentation, Slide, SlideContent, TextStyle, Transition,
     };
     use std::io::Read;
@@ -181,9 +181,10 @@ mod tests {
             },
             background: Background::Solid(Color::black()),
             transition: Transition::Cut,
-            group_label: None,
+            group: None,
             notes: Some("Test note".to_string()),
             layers: Vec::new(),
+            cues: Vec::new(),
         });
         p
     }

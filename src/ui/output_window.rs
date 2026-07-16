@@ -1,11 +1,11 @@
-use crate::slides::Transition;
+use crate::domain::Transition;
 use crate::ui::messages::Message;
 use crate::ui::presenter::canvas::presenter_canvas_panel;
 use iced::{Background, Color, Element, Length, widget::container};
 
 pub fn view<'a>(
-    current_slide: Option<&'a crate::slides::Slide>,
-    from_slide: Option<&'a crate::slides::Slide>,
+    current_slide: Option<&'a crate::domain::Slide>,
+    from_slide: Option<&'a crate::domain::Slide>,
     transition: Transition,
     progress: f32,
     video_frame: Option<&'a iced::widget::image::Handle>,
