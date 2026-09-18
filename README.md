@@ -25,7 +25,6 @@ OpenPresenter is a live presentation tool built entirely in Rust. It targets liv
 - [Development](#development)
 - [Contributing](#contributing)
 - [Security](#security)
-- [Tech Stack](#tech-stack)
 - [License](#license)
 
 ---
@@ -339,27 +338,9 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [A
 
 ---
 
-## Tech Stack
-
-| Component      | Crate                                          | Version |
-| -------------- | ---------------------------------------------- | ------- |
-| UI framework   | [iced](https://iced.rs/)                       | 0.14    |
-| GPU rendering  | [wgpu](https://wgpu.rs/)                       | 28      |
-| Text rendering | [glyphon](https://docs.rs/glyphon/)            | 0.10    |
-| Database       | [rusqlite](https://docs.rs/rusqlite/)          | 0.38    |
-| Media decoding | [ffmpeg-next](https://docs.rs/ffmpeg-next/)    | 9       |
-| Audio          | [rodio](https://docs.rs/rodio/)                | 0.22    |
-| NDI output     | NDI SDK v6 (bindgen FFI)                       | 6       |
-| HTTP triggers  | [axum](https://docs.rs/axum/)                  | 0.8     |
-| OSC triggers   | [rosc](https://docs.rs/rosc/)                  | 0.11    |
-| Serialization  | [serde](https://serde.rs/) + serde_json + toml | —       |
-| Async runtime  | [tokio](https://tokio.rs/)                     | 1       |
-
----
-
 ## License
 
-Copyright 2026 Vincent
+Copyright 2026 Vincent and the OpenPresenter Contributors
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
 

@@ -162,7 +162,7 @@ jobs:
           tool: nextest,cargo-llvm-cov
 
       - name: Run tests with coverage (no NDI SDK)
-        run: cargo llvm-cov nextest --no-default-features --profile ci --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --no-default-features --profile ci --ignore-filename-regex "src[/\\]ui" --lcov --output-path lcov.info
 
       - name: Upload coverage artifact
         if: always()
