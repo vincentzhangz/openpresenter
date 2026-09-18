@@ -276,6 +276,7 @@ pub fn detect_displays() -> Vec<DetectedDisplay> {
     fallback_displays()
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn parse_resolution_from_display(disp: &serde_json::Value) -> (u32, u32) {
     if let Some(res_str) = disp.get("_spdisplays_resolution").and_then(|v| v.as_str())
         && let Some((w, h)) = parse_w_x_h(res_str)
@@ -290,6 +291,7 @@ fn parse_resolution_from_display(disp: &serde_json::Value) -> (u32, u32) {
     (1920, 1080)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn parse_w_x_h(s: &str) -> Option<(u32, u32)> {
     let parts: Vec<&str> = s.split('@').next()?.split('x').collect();
     if parts.len() >= 2 {
@@ -434,5 +436,21 @@ mod tests {
         assert_eq!(parse_w_x_h("1920 x 1080"), Some((1920, 1080)));
         assert_eq!(parse_w_x_h("3840 x 2160 @ 60.00Hz"), Some((3840, 2160)));
         assert_eq!(parse_w_x_h("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_resolution_from_display() {
+        let json_res = serde_json::json!({
+            "_spdisplays_resolution": "2560 x 1440 @ 60.00Hz"
+        });
+        assert_eq!(parse_resolution_from_display(&json_res), (2560, 1440));
+
+        let json_pixels = serde_json::json!({
+            "_spdisplays_pixels": "1920 x 1080"
+        });
+        assert_eq!(parse_resolution_from_display(&json_pixels), (1920, 1080));
+
+        let json_fallback = serde_json::json!({});
+        assert_eq!(parse_resolution_from_display(&json_fallback), (1920, 1080));
     }
 }
