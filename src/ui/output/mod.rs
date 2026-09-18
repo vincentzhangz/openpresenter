@@ -45,6 +45,8 @@ pub enum Message {
     SetDefaultGridCols(usize),
     SaveConfig,
     ResetToDefaults,
+    RefreshDisplays,
+    ApplyDetectedDisplay(usize),
 }
 
 fn wrap(msg: Message) -> RootMessage {
@@ -83,6 +85,8 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::SetDefaultGridCols(c) => set_default_grid_cols(w, c),
         Message::SaveConfig => save_config(w),
         Message::ResetToDefaults => reset_to_defaults(w),
+        Message::RefreshDisplays => refresh_displays(w),
+        Message::ApplyDetectedDisplay(idx) => apply_detected_display(w, idx),
     }
 }
 
@@ -252,6 +256,37 @@ pub(crate) fn reset_to_defaults(w: &mut MainWindow) -> Task<RootMessage> {
     w.presenting.slide_grid_cols = 4;
     w.presenting.global_transition = Transition::Fade { duration_ms: 500 };
     w.output.settings_status_message = Some("Reset all settings to factory defaults".to_string());
+    Task::none()
+}
+
+pub(crate) fn refresh_displays(w: &mut MainWindow) -> Task<RootMessage> {
+    w.output.detected_displays = crate::output::detect_displays();
+    w.output.settings_status_message = Some(format!(
+        "Detected {} display(s)",
+        w.output.detected_displays.len()
+    ));
+    Task::none()
+}
+
+pub(crate) fn apply_detected_display(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    if let Some(disp) = w.output.detected_displays.get(idx) {
+        w.output.screen_x = disp.x.to_string();
+        w.output.screen_y = disp.y.to_string();
+        w.app_config.output.screen_x = disp.x as f32;
+        w.app_config.output.screen_y = disp.y as f32;
+        let _ = w.app_config.save();
+
+        w.output
+            .manager
+            .set_resolution("audience", disp.width, disp.height);
+        w.output
+            .manager
+            .set_resolution("main", disp.width, disp.height);
+        w.output.settings_status_message = Some(format!(
+            "Applied display '{}' ({}×{} at {},{})",
+            disp.name, disp.width, disp.height, disp.x, disp.y
+        ));
+    }
     Task::none()
 }
 
@@ -785,6 +820,112 @@ fn tab_screens<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
         .padding([4, 8])
         .style(theme::ghost_button);
 
+    let mut monitor_items: Column<'a, RootMessage> = column![].spacing(6);
+    if w.output.detected_displays.is_empty() {
+        monitor_items = monitor_items.push(
+            text("No physical monitors detected. Connect an external display and click Refresh.")
+                .size(11)
+                .color(theme::TEXT_MUTED),
+        );
+    } else {
+        for (idx, disp) in w.output.detected_displays.iter().enumerate() {
+            let badge = if disp.is_primary {
+                container(
+                    text("PRIMARY")
+                        .size(9)
+                        .color(Color::from_rgb(0.2, 0.8, 0.4)),
+                )
+                .padding([2, 6])
+                .style(|_: &iced::Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(0.2, 0.8, 0.4, 0.15))),
+                    border: Border {
+                        radius: 3.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            } else {
+                container(
+                    text("SECONDARY")
+                        .size(9)
+                        .color(Color::from_rgb(0.4, 0.7, 1.0)),
+                )
+                .padding([2, 6])
+                .style(|_: &iced::Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(0.4, 0.7, 1.0, 0.15))),
+                    border: Border {
+                        radius: 3.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            };
+
+            let use_btn = button(text("Use Display").size(11))
+                .on_press(wrap(Message::ApplyDetectedDisplay(idx)))
+                .padding([4, 10])
+                .style(theme::primary_button);
+
+            let disp_row = row![
+                column![
+                    row![
+                        text(&disp.name).size(13).color(theme::TEXT_PRIMARY),
+                        Space::new().width(6),
+                        badge,
+                    ]
+                    .align_y(Alignment::Center),
+                    text(format!(
+                        "Resolution: {}×{}  |  Origin: ({}, {})",
+                        disp.width, disp.height, disp.x, disp.y
+                    ))
+                    .size(11)
+                    .color(theme::TEXT_SECONDARY),
+                ]
+                .spacing(2),
+                Space::new().width(Length::Fill),
+                use_btn,
+            ]
+            .align_y(Alignment::Center);
+
+            let disp_card = container(disp_row)
+                .width(Length::Fill)
+                .padding([6, 10])
+                .style(|_: &iced::Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.03))),
+                    border: Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+
+            monitor_items = monitor_items.push(disp_card);
+        }
+    }
+
+    let refresh_btn = button(
+        row![
+            fa_icon_solid("arrows-rotate").size(11.0_f32),
+            Space::new().width(6),
+            text("Refresh Displays").size(11),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .on_press(wrap(Message::RefreshDisplays))
+    .padding([4, 10])
+    .style(theme::ghost_button);
+
+    let detected_card = section_card(
+        "DETECTED HARDWARE MONITORS",
+        "desktop",
+        column![
+            monitor_items,
+            row![Space::new().width(Length::Fill), refresh_btn].align_y(Alignment::Center),
+        ]
+        .spacing(8),
+    );
+
     let screen_offsets_card = section_card(
         "PHYSICAL DISPLAY PLACEMENT",
         "display",
@@ -827,7 +968,7 @@ fn tab_screens<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
         column![output_rows, add_form,].spacing(8),
     );
 
-    column![screen_offsets_card, routing_card]
+    column![detected_card, screen_offsets_card, routing_card]
         .spacing(12)
         .padding([8, 14])
         .into()

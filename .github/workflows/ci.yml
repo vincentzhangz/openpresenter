@@ -7,23 +7,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel in-flight runs for the same ref so we don't waste CI minutes on
-# superseded commits.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Restrict default token permissions to the minimum needed.
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  CACHE_VERSION: v4
+  CACHE_VERSION: v5
 
 jobs:
-  # ── Format ────────────────────────────────────────────────────────────────
+  # ── Format (platform-independent, run once) ────────────────────────────────
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -38,11 +35,15 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-  # ── Clippy ────────────────────────────────────────────────────────────────
+  # ── Clippy (all platforms) ─────────────────────────────────────────────────
   clippy:
-    name: Clippy
-    runs-on: macos-latest # wgpu/Metal requires macOS in CI
+    name: Clippy (${{ matrix.os }})
     needs: [fmt]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,11 +52,35 @@ jobs:
         with:
           components: clippy
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libavcodec-dev libavdevice-dev libavfilter-dev \
+            libavformat-dev libavutil-dev \
+            libswscale-dev libswresample-dev \
+            libclang-dev \
+            libasound2-dev
+          for lib in libavcodec libavdevice libavfilter libavformat libavutil libswresample libswscale; do
+            sudo ln -sf /usr/include/x86_64-linux-gnu/$lib /usr/include/$lib
+          done
+
       - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
         run: |
           brew install ffmpeg
           echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install ffmpeg:x64-windows
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          echo "FFMPEG_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows" >> $env:GITHUB_ENV
+          echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" >> $env:GITHUB_PATH
 
       - name: Restore cargo cache
         uses: actions/cache@v4
@@ -73,22 +98,50 @@ jobs:
       - name: Clippy (warnings-as-errors, no NDI SDK)
         run: cargo clippy --no-default-features -- -D warnings
 
-  # ── Tests ─────────────────────────────────────────────────────────────────
+  # ── Tests (all platforms) ──────────────────────────────────────────────────
   test:
-    name: Tests
-    runs-on: macos-latest # wgpu/Metal requires macOS in CI
-    needs: [fmt] # Don't burn minutes on unformatted code
+    name: Tests (${{ matrix.os }})
+    needs: [fmt]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libavcodec-dev libavdevice-dev libavfilter-dev \
+            libavformat-dev libavutil-dev \
+            libswscale-dev libswresample-dev \
+            libclang-dev \
+            libasound2-dev
+          for lib in libavcodec libavdevice libavfilter libavformat libavutil libswresample libswscale; do
+            sudo ln -sf /usr/include/x86_64-linux-gnu/$lib /usr/include/$lib
+          done
+
       - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
         run: |
           brew install ffmpeg
           echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install ffmpeg:x64-windows
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          echo "FFMPEG_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows" >> $env:GITHUB_ENV
+          echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" >> $env:GITHUB_PATH
 
       - name: Restore cargo cache
         uses: actions/cache@v4
@@ -111,26 +164,38 @@ jobs:
       - name: Run tests with coverage (no NDI SDK)
         run: cargo llvm-cov nextest --no-default-features --profile ci --lcov --output-path lcov.info
 
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: lcov.info
+          retention-days: 7
+
       - name: Update test and coverage badges
-        if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: always() && runner.os == 'macOS' && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: gaelgirodon/ci-badges-action@v1
         with:
           gist-id: 98482a1448f7b055a193c05f9acf683b
           token: ${{ secrets.GIST_TOKEN }}
 
-  # ── Stub-mode build check ─────────────────────────────────────────────────
-  # Verify the codebase compiles cleanly on Linux without any platform SDK.
-  build-linux:
-    name: Build (Linux, no platform SDKs)
-    runs-on: ubuntu-latest
+  # ── Build (all platforms) ──────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }})
     needs: [fmt]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -143,6 +208,21 @@ jobs:
           for lib in libavcodec libavdevice libavfilter libavformat libavutil libswresample libswscale; do
             sudo ln -sf /usr/include/x86_64-linux-gnu/$lib /usr/include/$lib
           done
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          echo "FFMPEG_DIR=$(brew --prefix ffmpeg)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install ffmpeg:x64-windows
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          echo "FFMPEG_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows" >> $env:GITHUB_ENV
+          echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" >> $env:GITHUB_PATH
 
       - name: Restore cargo cache
         uses: actions/cache@v4
@@ -157,5 +237,15 @@ jobs:
             ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-build-
             ${{ env.CACHE_VERSION }}-${{ runner.os }}-cargo-
 
-      - name: Cargo check (no NDI SDK)
-        run: cargo check --no-default-features
+      - name: Build release (no NDI SDK)
+        run: cargo build --release --no-default-features
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openpresenter-${{ matrix.os }}
+          path: |
+            target/release/openpresenter
+            target/release/openpresenter.exe
+          retention-days: 14
+          if-no-files-found: ignore

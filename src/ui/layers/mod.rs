@@ -233,6 +233,7 @@ pub(crate) fn move_layer_down(w: &mut MainWindow, idx: usize) -> Task<RootMessag
 }
 
 pub(crate) fn toggle_selected_layer_visibility(w: &mut MainWindow) -> Task<RootMessage> {
+    w.push_undo();
     if let Some(layer) = selected_layer_mut(w) {
         layer.visible = !layer.visible;
     }
@@ -241,6 +242,7 @@ pub(crate) fn toggle_selected_layer_visibility(w: &mut MainWindow) -> Task<RootM
 }
 
 pub(crate) fn toggle_layer_visibility(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    w.push_undo();
     if let Some(slide) = w.get_current_slide_mut()
         && let Some(layer) = slide.layers.get_mut(idx)
     {
@@ -251,6 +253,7 @@ pub(crate) fn toggle_layer_visibility(w: &mut MainWindow, idx: usize) -> Task<Ro
 }
 
 pub(crate) fn toggle_selected_layer_lock(w: &mut MainWindow) -> Task<RootMessage> {
+    w.push_undo();
     if let Some(layer) = selected_layer_mut(w) {
         layer.locked = !layer.locked;
     }
@@ -259,6 +262,7 @@ pub(crate) fn toggle_selected_layer_lock(w: &mut MainWindow) -> Task<RootMessage
 }
 
 pub(crate) fn toggle_layer_lock(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    w.push_undo();
     if let Some(slide) = w.get_current_slide_mut()
         && let Some(layer) = slide.layers.get_mut(idx)
     {
@@ -323,6 +327,7 @@ text_color_channel!(selected_layer_text_color_b, b);
 macro_rules! text_toggle {
     ($fn_name:ident, $field:ident) => {
         pub(crate) fn $fn_name(w: &mut MainWindow) -> Task<RootMessage> {
+            w.push_undo();
             if let Some(layer) = selected_layer_mut(w)
                 && let ObjectContent::Text { ref mut style, .. } = layer.content
             {
@@ -397,6 +402,7 @@ layer_geom_field!(selected_layer_width_changed, width, width);
 layer_geom_field!(selected_layer_height_changed, height, height);
 
 pub(crate) fn layer_drag_started(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    w.push_undo();
     select_layer(w, Some(idx))
 }
 

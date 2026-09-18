@@ -26,6 +26,10 @@ pub enum Message {
     MacroStop(String),
     MacroToggleLoop(String),
     MacroNameChanged(String),
+    MidiStart,
+    MidiStop,
+    MidiRefresh,
+    SelectMidiPort(usize),
 }
 
 fn wrap(msg: Message) -> RootMessage {
@@ -34,15 +38,7 @@ fn wrap(msg: Message) -> RootMessage {
 
 /// Render the triggers panel.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
-    triggers_panel(
-        w.triggers.manager.http_running,
-        &w.triggers.http_port_str,
-        w.triggers.manager.osc_running,
-        &w.triggers.osc_port_str,
-        &w.triggers.manager.macros,
-        &w.triggers.new_macro_name,
-        &w.triggers.macro_running_ids,
-    )
+    triggers_panel(&w.triggers)
 }
 
 /// Dispatch a triggers message.
@@ -60,6 +56,10 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::MacroStop(id) => macro_stop(w, id),
         Message::MacroToggleLoop(id) => macro_toggle_loop(w, id),
         Message::MacroNameChanged(s) => macro_name_changed(w, s),
+        Message::MidiStart => midi_start(w),
+        Message::MidiStop => midi_stop(w),
+        Message::MidiRefresh => midi_refresh(w),
+        Message::SelectMidiPort(p) => select_midi_port(w, p),
     }
 }
 
@@ -231,15 +231,49 @@ pub(crate) fn macro_name_changed(w: &mut MainWindow, s: String) -> Task<RootMess
     Task::none()
 }
 
-pub fn triggers_panel<'a>(
-    http_running: bool,
-    http_port: &'a str,
-    osc_running: bool,
-    osc_port: &'a str,
-    macros: &'a [Macro],
-    new_macro_name: &'a str,
-    running_ids: &'a std::collections::HashSet<String>,
+pub(crate) fn midi_start(w: &mut MainWindow) -> Task<RootMessage> {
+    let port = w.triggers.selected_midi_port.unwrap_or(0);
+    if let Err(e) = w.triggers.manager.start_midi(port) {
+        w.set_error(format!("MIDI error: {e}"));
+    }
+    Task::none()
+}
+
+pub(crate) fn midi_stop(w: &mut MainWindow) -> Task<RootMessage> {
+    w.triggers.manager.stop_midi();
+    Task::none()
+}
+
+pub(crate) fn midi_refresh(w: &mut MainWindow) -> Task<RootMessage> {
+    w.triggers.midi_ports = crate::triggers::midi::list_midi_inputs();
+    if w.triggers.selected_midi_port.is_none() && !w.triggers.midi_ports.is_empty() {
+        w.triggers.selected_midi_port = Some(0);
+    }
+    Task::none()
+}
+
+pub(crate) fn select_midi_port(w: &mut MainWindow, port: usize) -> Task<RootMessage> {
+    w.triggers.selected_midi_port = Some(port);
+    if w.triggers.manager.midi_running {
+        let _ = w.triggers.manager.start_midi(port);
+    }
+    Task::none()
+}
+
+pub(crate) fn triggers_panel<'a>(
+    state: &'a crate::ui::state::TriggersState,
 ) -> Element<'a, RootMessage> {
+    let http_running = state.manager.http_running;
+    let http_port = &state.http_port_str;
+    let osc_running = state.manager.osc_running;
+    let osc_port = &state.osc_port_str;
+    let midi_running = state.manager.midi_running;
+    let selected_midi_port = state.selected_midi_port;
+    let midi_ports = &state.midi_ports;
+    let macros = &state.manager.macros;
+    let new_macro_name = &state.new_macro_name;
+    let running_ids = &state.macro_running_ids;
+
     let header = row![
         text("Triggers & Automation").size(16.0),
         Space::new().width(Length::Fill),
@@ -291,6 +325,65 @@ pub fn triggers_panel<'a>(
     .spacing(6)
     .align_y(iced::Alignment::Center);
 
+    let midi_label = if midi_running {
+        let port_name = selected_midi_port
+            .and_then(|idx| midi_ports.iter().find(|p| p.index == idx))
+            .map(|p| p.name.as_str())
+            .unwrap_or("Connected");
+        format!("MIDI active: {port_name} (Note 60/59 Next/Prev, CC 64 Pedal)")
+    } else if midi_ports.is_empty() {
+        "No MIDI devices detected".to_string()
+    } else {
+        let count = midi_ports.len();
+        format!("{count} MIDI device(s) ready")
+    };
+
+    let midi_start_stop = if midi_running {
+        button("Stop").on_press(wrap(Message::MidiStop))
+    } else if !midi_ports.is_empty() {
+        button("Start").on_press(wrap(Message::MidiStart))
+    } else {
+        button("Start")
+    };
+
+    let midi_refresh_btn =
+        button(fa_icon_solid("arrows-rotate").size(11.0_f32)).on_press(wrap(Message::MidiRefresh));
+
+    let mut midi_port_buttons = row![].spacing(4);
+    for p in midi_ports {
+        let is_sel = selected_midi_port == Some(p.index);
+        let btn = button(text(&p.name).size(11.0))
+            .on_press(wrap(Message::SelectMidiPort(p.index)))
+            .style(if is_sel {
+                crate::ui::theme::primary_button
+            } else {
+                crate::ui::theme::ghost_button
+            });
+        midi_port_buttons = midi_port_buttons.push(btn);
+    }
+
+    let midi_section = column![
+        row![
+            text("MIDI Remote").size(13.0),
+            Space::new().width(Length::Fill),
+            midi_refresh_btn,
+            midi_start_stop,
+            text(midi_label).size(11.0),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center),
+        if midi_ports.is_empty() {
+            row![
+                text("Connect a USB MIDI keyboard or foot pedal and refresh.")
+                    .size(10.0)
+                    .color(crate::ui::theme::TEXT_MUTED)
+            ]
+        } else {
+            midi_port_buttons
+        }
+    ]
+    .spacing(4);
+
     let macro_title = text("Automation macros").size(13.0);
 
     let macro_list: Element<'a, RootMessage> = if macros.is_empty() {
@@ -336,6 +429,7 @@ pub fn triggers_panel<'a>(
         header,
         http_section,
         osc_section,
+        midi_section,
         macro_title,
         macro_list,
         new_macro_row,

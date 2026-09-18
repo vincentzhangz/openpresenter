@@ -1,5 +1,6 @@
 pub mod automation;
 pub mod http;
+pub mod midi;
 pub mod osc;
 
 pub use crate::domain::Action;
@@ -16,6 +17,10 @@ pub struct TriggerManager {
     pub osc_port: u16,
     pub osc_running: bool,
 
+    midi_listener: Option<midi::MidiListener>,
+    pub midi_port: Option<usize>,
+    pub midi_running: bool,
+
     pub macros: Vec<automation::Macro>,
 }
 
@@ -31,6 +36,9 @@ impl Default for TriggerManager {
             osc_handle: None,
             osc_port: 9000,
             osc_running: false,
+            midi_listener: None,
+            midi_port: None,
+            midi_running: false,
             macros: Vec::new(),
         }
     }
@@ -95,11 +103,27 @@ impl TriggerManager {
         }
         self.osc_running = false;
     }
+
+    pub fn start_midi(&mut self, port_index: usize) -> Result<(), anyhow::Error> {
+        self.stop_midi();
+        let listener = midi::MidiListener::start(port_index, self.sender.clone())?;
+        self.midi_listener = Some(listener);
+        self.midi_port = Some(port_index);
+        self.midi_running = true;
+        Ok(())
+    }
+
+    pub fn stop_midi(&mut self) {
+        self.midi_listener = None;
+        self.midi_port = None;
+        self.midi_running = false;
+    }
 }
 
 impl Drop for TriggerManager {
     fn drop(&mut self) {
         self.stop_http();
         self.stop_osc();
+        self.stop_midi();
     }
 }

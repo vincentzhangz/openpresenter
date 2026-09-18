@@ -35,6 +35,7 @@ iced_font_awesome = "0.4"
 image = "0.25"
 log = "0.4"
 lru = "0.18"
+midir = "0.10"
 pollster = "1.0"
 rfd = "0.17"
 rodio = { version = "0.22", default-features = false, features = [
@@ -61,3 +62,13 @@ bindgen = "0.73"
 
 [dev-dependencies]
 tempfile = "3"
+
+[package.metadata.bundle]
+name = "OpenPresenter"
+identifier = "com.openpresenter.app"
+version = "0.1.0"
+category = "Productivity"
+short_description = "Live presentation software"
+long_description = "Modern open-source live presentation software built in Rust"
+copyright = "2026 OpenPresenter Contributors"
+osx_minimum_system_version = "12.0"

@@ -9,7 +9,7 @@ pub use props::{LiveAlertMessage, Look, Mask, Prop, PropContent, PropManager, Sc
 /// A presentation action that can be triggered by cues, macros, HTTP, or OSC.
 ///
 /// Defines the operations an operator or automation can perform against the live output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
     NextSlide,
     PrevSlide,

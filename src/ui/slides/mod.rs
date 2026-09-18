@@ -74,7 +74,10 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::SlideTransitionChanged(t) => slide_transition_changed(w, t),
         Message::TransitionDurationChanged(s) => transition_duration_changed(w, s),
         Message::SaveSlide => save_slide(w),
-        Message::TextDragStarted => Task::none(),
+        Message::TextDragStarted => {
+            w.push_undo();
+            Task::none()
+        }
         Message::TextDragged(p) => text_dragged(w, p),
         Message::TextDragEnded => text_drag_ended(w),
         Message::ConvertSlideToText => convert_to_text(w),

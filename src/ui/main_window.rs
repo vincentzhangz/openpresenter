@@ -97,6 +97,8 @@ impl MainWindow {
                 panel_open: false,
                 http_port_str: String::from("9090"),
                 osc_port_str: String::from("9000"),
+                midi_ports: crate::triggers::midi::list_midi_inputs(),
+                selected_midi_port: None,
                 new_macro_name: String::new(),
                 macro_running_handles: std::collections::HashMap::new(),
                 macro_running_ids: std::collections::HashSet::new(),

@@ -7,6 +7,38 @@ pub use sender::NdiSender;
 
 use crate::Result;
 
+/// Check whether the native NDI SDK runtime library is installed on the host system.
+pub fn is_available() -> bool {
+    #[cfg(feature = "ndi-sdk")]
+    {
+        #[cfg(target_os = "macos")]
+        {
+            std::path::Path::new("/Library/NDI SDK for Apple/lib/macOS/libndi.dylib").exists()
+                || std::path::Path::new("/usr/local/lib/libndi.dylib").exists()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            std::path::Path::new(
+                "C:/Program Files/NDI/NDI 5 SDK/Lib/x64/Processing.NDI.Lib.x64.dll",
+            )
+            .exists()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            std::path::Path::new("/usr/local/lib/libndi.so").exists()
+                || std::path::Path::new("/usr/lib/libndi.so").exists()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            false
+        }
+    }
+    #[cfg(not(feature = "ndi-sdk"))]
+    {
+        false
+    }
+}
+
 pub fn initialize() -> Result<()> {
     unsafe {
         if !sys::NDIlib_initialize() {

@@ -175,6 +175,155 @@ impl OutputManager {
     }
 }
 
+/// Represents a physical display/monitor detected on the host system.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetectedDisplay {
+    pub id: String,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub is_primary: bool,
+}
+
+impl DetectedDisplay {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        is_primary: bool,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            x,
+            y,
+            width,
+            height,
+            is_primary,
+        }
+    }
+}
+
+/// Detect attached physical monitors/displays.
+///
+/// On macOS, queries `system_profiler SPDisplaysDataType -json`.
+/// On other platforms or on failure, falls back to primary and secondary presets.
+pub fn detect_displays() -> Vec<DetectedDisplay> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("system_profiler")
+            .arg("SPDisplaysDataType")
+            .arg("-json")
+            .output()
+            && output.status.success()
+            && let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        {
+            let mut displays = Vec::new();
+            let mut current_offset_x = 0;
+
+            if let Some(gpus) = json.get("SPDisplaysDataType").and_then(|v| v.as_array()) {
+                for gpu in gpus {
+                    if let Some(ndrvs) = gpu.get("spdisplays_ndrvs").and_then(|v| v.as_array()) {
+                        for disp in ndrvs {
+                            let name = disp
+                                .get("_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Display")
+                                .to_string();
+                            let id = disp
+                                .get("_spdisplays_displayID")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("1")
+                                .to_string();
+                            let is_primary = disp
+                                .get("spdisplays_main")
+                                .and_then(|v| v.as_str())
+                                .map(|v| v == "spdisplays_yes")
+                                .unwrap_or(false);
+
+                            let (width, height) = parse_resolution_from_display(disp);
+                            let x = if is_primary { 0 } else { current_offset_x };
+                            let y = 0;
+                            if is_primary {
+                                current_offset_x += width as i32;
+                            }
+
+                            displays.push(DetectedDisplay {
+                                id,
+                                name,
+                                x,
+                                y,
+                                width,
+                                height,
+                                is_primary,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if !displays.is_empty() {
+                return displays;
+            }
+        }
+    }
+
+    fallback_displays()
+}
+
+fn parse_resolution_from_display(disp: &serde_json::Value) -> (u32, u32) {
+    if let Some(res_str) = disp.get("_spdisplays_resolution").and_then(|v| v.as_str())
+        && let Some((w, h)) = parse_w_x_h(res_str)
+    {
+        return (w, h);
+    }
+    if let Some(pix_str) = disp.get("_spdisplays_pixels").and_then(|v| v.as_str())
+        && let Some((w, h)) = parse_w_x_h(pix_str)
+    {
+        return (w, h);
+    }
+    (1920, 1080)
+}
+
+fn parse_w_x_h(s: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = s.split('@').next()?.split('x').collect();
+    if parts.len() >= 2 {
+        let w = parts[0].trim().parse::<u32>().ok()?;
+        let h = parts[1].trim().parse::<u32>().ok()?;
+        return Some((w, h));
+    }
+    None
+}
+
+/// Fallback display presets when system detection is unavailable or in virtualized environments.
+pub fn fallback_displays() -> Vec<DetectedDisplay> {
+    vec![
+        DetectedDisplay {
+            id: "display-1".into(),
+            name: "Primary Display".into(),
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            is_primary: true,
+        },
+        DetectedDisplay {
+            id: "display-2".into(),
+            name: "Secondary Projector / TV".into(),
+            x: 1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            is_primary: false,
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +406,33 @@ mod tests {
             .to_string(),
             "Mirror: main"
         );
+    }
+
+    #[test]
+    fn test_display_detection_and_fallback() {
+        let displays = detect_displays();
+        assert!(
+            !displays.is_empty(),
+            "Display detection should return at least one display"
+        );
+        let primary = displays.iter().find(|d| d.is_primary);
+        assert!(
+            primary.is_some(),
+            "At least one primary display should be present"
+        );
+
+        let fallbacks = fallback_displays();
+        assert_eq!(fallbacks.len(), 2);
+        assert!(fallbacks[0].is_primary);
+        assert_eq!(fallbacks[0].width, 1920);
+        assert_eq!(fallbacks[0].height, 1080);
+        assert_eq!(fallbacks[1].x, 1920);
+    }
+
+    #[test]
+    fn test_parse_w_x_h() {
+        assert_eq!(parse_w_x_h("1920 x 1080"), Some((1920, 1080)));
+        assert_eq!(parse_w_x_h("3840 x 2160 @ 60.00Hz"), Some((3840, 2160)));
+        assert_eq!(parse_w_x_h("invalid"), None);
     }
 }

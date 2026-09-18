@@ -44,6 +44,8 @@ pub struct CanvasState {
     drag_action: Option<DragAction>,
     last_click_time: Option<std::time::Instant>,
     last_click_target: Option<Option<usize>>,
+    pub active_guide_x: Option<f32>,
+    pub active_guide_y: Option<f32>,
 }
 
 impl Default for CanvasState {
@@ -57,6 +59,8 @@ impl Default for CanvasState {
             drag_action: None,
             last_click_time: None,
             last_click_target: None,
+            active_guide_x: None,
+            active_guide_y: None,
         }
     }
 }
@@ -238,14 +242,102 @@ impl canvas::Program<Message> for SlideProgram {
                 let norm_y = ((pos.y - off_y) / slide_h).clamp(0.0, 1.0);
                 if let Some(start) = state.drag_start_mouse {
                     let msg = match (state.dragging_layer, state.drag_action) {
-                        (Some(_), Some(DragAction::Move)) => {
-                            let new_x =
+                        (Some(drag_idx), Some(DragAction::Move)) => {
+                            let raw_x =
                                 (state.drag_start_text.0 + norm_x - start.x).clamp(0.0, 1.0);
-                            let new_y =
+                            let raw_y =
                                 (state.drag_start_text.1 + norm_y - start.y).clamp(0.0, 1.0);
+
+                            let hw = state.drag_start_size.0 / 2.0;
+                            let hh = state.drag_start_size.1 / 2.0;
+                            const SNAP_THRESHOLD: f32 = 0.012;
+
+                            // Calculate X snap
+                            let mut best_dx = SNAP_THRESHOLD;
+                            let mut snapped_x = raw_x;
+                            let mut guide_x = None;
+
+                            let snap_candidates_x = [(0.5, 0.5), (hw, 0.0), (1.0 - hw, 1.0)];
+                            for (target_x, guide) in snap_candidates_x {
+                                let dist = (raw_x - target_x).abs();
+                                if dist < best_dx {
+                                    best_dx = dist;
+                                    snapped_x = target_x;
+                                    guide_x = Some(guide);
+                                }
+                            }
+
+                            for (idx, other) in slide.effective_layers().iter().enumerate() {
+                                if idx == drag_idx || !other.visible {
+                                    continue;
+                                }
+                                let other_left = other.position_x - other.width / 2.0;
+                                let other_right = other.position_x + other.width / 2.0;
+                                let layer_candidates = [
+                                    (other.position_x, other.position_x),
+                                    (other_left + hw, other_left),
+                                    (other_right - hw, other_right),
+                                    (other_left - hw, other_left),
+                                    (other_right + hw, other_right),
+                                ];
+                                for (target_x, guide) in layer_candidates {
+                                    let dist = (raw_x - target_x).abs();
+                                    if dist < best_dx {
+                                        best_dx = dist;
+                                        snapped_x = target_x;
+                                        guide_x = Some(guide);
+                                    }
+                                }
+                            }
+
+                            // Calculate Y snap
+                            let mut best_dy = SNAP_THRESHOLD;
+                            let mut snapped_y = raw_y;
+                            let mut guide_y = None;
+
+                            let snap_candidates_y = [(0.5, 0.5), (hh, 0.0), (1.0 - hh, 1.0)];
+                            for (target_y, guide) in snap_candidates_y {
+                                let dist = (raw_y - target_y).abs();
+                                if dist < best_dy {
+                                    best_dy = dist;
+                                    snapped_y = target_y;
+                                    guide_y = Some(guide);
+                                }
+                            }
+
+                            for (idx, other) in slide.effective_layers().iter().enumerate() {
+                                if idx == drag_idx || !other.visible {
+                                    continue;
+                                }
+                                let other_top = other.position_y - other.height / 2.0;
+                                let other_bottom = other.position_y + other.height / 2.0;
+                                let layer_candidates = [
+                                    (other.position_y, other.position_y),
+                                    (other_top + hh, other_top),
+                                    (other_bottom - hh, other_bottom),
+                                    (other_top - hh, other_top),
+                                    (other_bottom + hh, other_bottom),
+                                ];
+                                for (target_y, guide) in layer_candidates {
+                                    let dist = (raw_y - target_y).abs();
+                                    if dist < best_dy {
+                                        best_dy = dist;
+                                        snapped_y = target_y;
+                                        guide_y = Some(guide);
+                                    }
+                                }
+                            }
+
+                            state.active_guide_x = guide_x;
+                            state.active_guide_y = guide_y;
+
+                            let new_x = snapped_x.clamp(0.0, 1.0);
+                            let new_y = snapped_y.clamp(0.0, 1.0);
                             Message::from(layers::Message::LayerDragged(Point::new(new_x, new_y)))
                         }
                         (Some(_), Some(DragAction::Resize(handle))) => {
+                            state.active_guide_x = None;
+                            state.active_guide_y = None;
                             let mut width = state.drag_start_size.0;
                             let mut height = state.drag_start_size.1;
                             let center_x = state.drag_start_text.0;
@@ -274,6 +366,8 @@ impl canvas::Program<Message> for SlideProgram {
                             })
                         }
                         _ => {
+                            state.active_guide_x = None;
+                            state.active_guide_y = None;
                             let new_x =
                                 (state.drag_start_text.0 + norm_x - start.x).clamp(0.0, 1.0);
                             let new_y =
@@ -294,6 +388,8 @@ impl canvas::Program<Message> for SlideProgram {
                 state.drag_start_mouse = None;
                 state.dragging_layer = None;
                 state.drag_action = None;
+                state.active_guide_x = None;
+                state.active_guide_y = None;
                 if was_layer_drag {
                     Some(Action::publish(Message::from(
                         layers::Message::LayerDragEnded,
@@ -311,7 +407,7 @@ impl canvas::Program<Message> for SlideProgram {
 
     fn draw(
         &self,
-        _state: &CanvasState,
+        state: &CanvasState,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
@@ -632,6 +728,28 @@ impl canvas::Program<Message> for SlideProgram {
                         .with_width(1.0),
                 );
             }
+        }
+
+        // Render alignment and snapping guide lines
+        if let Some(gx) = state.active_guide_x {
+            let x = off_x + gx * slide_w;
+            let line = Path::line(Point::new(x, off_y), Point::new(x, off_y + slide_h));
+            frame.stroke(
+                &line,
+                canvas::Stroke::default()
+                    .with_color(Color::from_rgb(1.0, 0.45, 0.1))
+                    .with_width(1.0),
+            );
+        }
+        if let Some(gy) = state.active_guide_y {
+            let y = off_y + gy * slide_h;
+            let line = Path::line(Point::new(off_x, y), Point::new(off_x + slide_w, y));
+            frame.stroke(
+                &line,
+                canvas::Stroke::default()
+                    .with_color(Color::from_rgb(1.0, 0.45, 0.1))
+                    .with_width(1.0),
+            );
         }
 
         vec![frame.into_geometry()]

@@ -200,6 +200,8 @@ pub(crate) struct TriggersState {
     pub(crate) panel_open: bool,
     pub(crate) http_port_str: String,
     pub(crate) osc_port_str: String,
+    pub(crate) midi_ports: Vec<crate::triggers::midi::MidiPortInfo>,
+    pub(crate) selected_midi_port: Option<usize>,
     pub(crate) new_macro_name: String,
     pub(crate) macro_running_handles:
         std::collections::HashMap<String, tokio::task::JoinHandle<()>>,
@@ -283,6 +285,7 @@ pub(crate) struct OutputState {
     pub(crate) message_input: String,
     pub(crate) settings_tab: SettingsTab,
     pub(crate) settings_status_message: Option<String>,
+    pub(crate) detected_displays: Vec<crate::output::DetectedDisplay>,
 }
 
 impl OutputState {
@@ -304,6 +307,7 @@ impl OutputState {
             message_input: String::new(),
             settings_tab: SettingsTab::General,
             settings_status_message: None,
+            detected_displays: crate::output::detect_displays(),
         }
     }
 }
