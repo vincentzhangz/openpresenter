@@ -2,11 +2,8 @@
 //!
 //! Services orchestrate repositories and domain types to perform use-cases.
 //! They contain **no iced / UI code** and are unit-testable in isolation, which
-//! is what makes the rest of the codebase scalable and maintainable: the UI
-//! becomes a thin shell that calls into services and renders their results.
-//!
-//! See `AGENTS.md` for the full architecture and the migration path that moves
-//! logic out of `src/ui/handlers` and into this module.
+//! keeps the domain logic decoupled and maintainable: the UI calls into services
+//! and renders authoritative application state.
 
 mod playlist;
 mod presentation;

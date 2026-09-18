@@ -18,9 +18,9 @@ anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
-dirs = "6"
+dirs = "7"
 env_logger = "0.11"
-ffmpeg-next = "8"
+ffmpeg-next = "9"
 futures = "0.3"
 glyphon = "0.12"
 iced = { version = "0.14", features = [
@@ -52,12 +52,12 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = "1"
 tower = "0.5"
-uuid = { version = "1.24", features = ["v4", "serde"] }
+uuid = { version = "1.26", features = ["v4", "serde"] }
 wgpu = "30"
 zip = { version = "8", features = ["deflate"] }
 
 [build-dependencies]
-bindgen = "0.72.1"
+bindgen = "0.73"
 
 [dev-dependencies]
 tempfile = "3"

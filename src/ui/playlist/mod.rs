@@ -5,7 +5,9 @@ use crate::ui::messages::{Message as RootMessage, ViewMode};
 use crate::ui::theme;
 use iced::{
     Alignment, Background, Color, Element, Length, Padding, Task,
-    widget::{Column, Space, button, column, container, row, scrollable, text, text_input},
+    widget::{
+        Column, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
+    },
 };
 use iced_font_awesome::fa_icon_solid;
 
@@ -13,7 +15,7 @@ use iced_font_awesome::fa_icon_solid;
 ///
 /// The root [`RootMessage`] enum wraps this in `RootMessage::Playlist(..)`, so
 /// every variant here is scoped to this feature instead of bloating the global
-/// enum. See `AGENTS.md` for the nested-message convention.
+/// enum.
 #[derive(Debug, Clone)]
 pub enum Message {
     New,
@@ -32,6 +34,8 @@ pub enum Message {
     MoveItemUp(usize),
     MoveItemDown(usize),
     DuplicateItem(usize),
+    Duplicate(String),
+    StartPlan(String),
     Start,
     Next,
     Prev,
@@ -46,16 +50,51 @@ fn wrap(msg: Message) -> RootMessage {
 
 /// Render the playlist (service-plan) panel.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    editor_view(w)
+}
+
+/// Render the playlist sidebar list for the left rail.
+pub fn list_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
     let active_plan_id = w.service.active.as_ref().map(|p| p.id.as_str());
-    planning_panel(
+    plan_list(
         &w.service.plans,
-        w.service.editing.as_ref(),
-        &w.service.name_edit,
-        &w.editor.presentations,
-        &w.song.songs,
+        w.service.editing.as_ref().map(|p| p.id.as_str()),
         active_plan_id,
-        w.service.item_index,
     )
+}
+
+/// Render the playlist editor / rundown panel for the center workspace.
+pub fn editor_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    let active_plan_id = w.service.active.as_ref().map(|p| p.id.as_str());
+    if let Some(plan) = w.service.editing.as_ref() {
+        plan_editor(
+            plan,
+            &w.service.name_edit,
+            &w.editor.presentations,
+            &w.song.songs,
+            active_plan_id,
+            w.service.item_index,
+        )
+    } else {
+        container(
+            column![
+                fa_icon_solid("list-ol")
+                    .size(32.0_f32)
+                    .color(theme::TEXT_MUTED),
+                text("Select a service plan from the sidebar, or click + New Plan")
+                    .size(14)
+                    .color(theme::TEXT_MUTED),
+            ]
+            .spacing(10)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .style(theme::canvas_bg_style)
+        .into()
+    }
 }
 
 /// Dispatch a playlist message.
@@ -77,6 +116,8 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::MoveItemUp(i) => move_item_up(w, i),
         Message::MoveItemDown(i) => move_item_down(w, i),
         Message::DuplicateItem(i) => duplicate_item(w, i),
+        Message::Duplicate(id) => duplicate_plan(w, id),
+        Message::StartPlan(id) => start_plan(w, id),
         Message::Start => start_service(w),
         Message::Next => service_next(w),
         Message::Prev => service_prev(w),
@@ -94,6 +135,7 @@ pub(crate) fn new_plan(w: &mut MainWindow) -> Task<RootMessage> {
 }
 
 pub(crate) fn open_plan(w: &mut MainWindow, id: String) -> Task<RootMessage> {
+    w.shell.rail_context_target = None;
     match w.services.playlists.get(&id) {
         Ok(plan) => {
             w.service.name_edit = plan.name.clone();
@@ -103,6 +145,24 @@ pub(crate) fn open_plan(w: &mut MainWindow, id: String) -> Task<RootMessage> {
         Err(e) => w.set_error(format!("open plan error: {e}")),
     }
     Task::none()
+}
+
+pub(crate) fn duplicate_plan(w: &mut MainWindow, id: String) -> Task<RootMessage> {
+    w.shell.rail_context_target = None;
+    match w.services.playlists.duplicate(&id) {
+        Ok(plan) => {
+            w.load_service_plans();
+            w.service.editing = Some(plan);
+        }
+        Err(e) => w.set_error(format!("duplicate plan error: {e}")),
+    }
+    Task::none()
+}
+
+pub(crate) fn start_plan(w: &mut MainWindow, id: String) -> Task<RootMessage> {
+    w.shell.rail_context_target = None;
+    let _ = open_plan(w, id);
+    start_service(w)
 }
 
 pub(crate) fn save_playlist(w: &mut MainWindow) -> Task<RootMessage> {
@@ -316,61 +376,50 @@ fn load_item(w: &mut MainWindow, index: usize) {
                 w.presenting.transition = None;
                 w.presenting.presentation = Some(pres);
                 w.shell.current_mode = ViewMode::Show;
+                w.shell.sidebar_tab = crate::ui::messages::SidebarTab::Presentations;
                 let _ = crate::ui::presenter::activate_slide(w, 0, false);
             }
             Err(e) => w.set_error(format!("load presentation item error: {e}")),
         },
         Some(PlaylistItem::Song { id, .. }) => match w.song.repo.get_song(&id) {
-            Ok(song) => w.load_song_for_editing(song),
+            Ok(song) => {
+                let slides: Vec<crate::domain::Slide> = song
+                    .verses
+                    .iter()
+                    .map(|v| {
+                        let mut slide = crate::domain::Slide::new_text_in_group(
+                            v.content.clone(),
+                            v.label.clone(),
+                        );
+                        slide.transition = w.presenting.global_transition;
+                        slide
+                    })
+                    .collect();
+                let pres = Presentation {
+                    id: format!("song-{}", song.id),
+                    name: song.title.clone(),
+                    slides,
+                    created_at: song.created_at,
+                    updated_at: song.updated_at,
+                };
+                w.presenting.slide_index = 0;
+                w.presenting.transition = None;
+                w.presenting.presentation = Some(pres);
+                w.shell.current_mode = ViewMode::Show;
+                w.shell.sidebar_tab = crate::ui::messages::SidebarTab::Presentations;
+                let _ = crate::ui::presenter::activate_slide(w, 0, false);
+            }
             Err(e) => w.set_error(format!("load song item error: {e}")),
         },
         Some(PlaylistItem::Blank) => {
+            w.presenting.slide_layer_active = false;
+            w.presenting.media_layer_active = false;
             if let Some(ref ndi) = w.presenting.ndi_output {
                 ndi.black_screen();
             }
         }
         _ => {}
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn planning_panel<'a>(
-    plans: &'a [Playlist],
-    editing: Option<&'a Playlist>,
-    plan_name_edit: &'a str,
-    presentations: &'a [Presentation],
-    songs: &'a [Song],
-    active_plan_id: Option<&'a str>,
-    service_item_index: usize,
-) -> Element<'a, RootMessage> {
-    let list = plan_list(plans, editing.map(|p| p.id.as_str()), active_plan_id);
-    let editor: Element<'a, RootMessage> = if let Some(plan) = editing {
-        plan_editor(
-            plan,
-            plan_name_edit,
-            presentations,
-            songs,
-            active_plan_id,
-            service_item_index,
-        )
-    } else {
-        container(
-            text("Select a service plan or create a new one")
-                .size(14)
-                .color(theme::TEXT_MUTED),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(theme::canvas_bg_style)
-        .into()
-    };
-
-    row![list, editor]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
 }
 
 fn plan_list<'a>(
@@ -416,13 +465,17 @@ fn plan_list<'a>(
             ]
             .spacing(2);
 
-            list_col = list_col.push(
-                button(card)
-                    .on_press(wrap(Message::Open(plan.id.clone())))
-                    .padding([8u16, 12u16])
-                    .width(Length::Fill)
-                    .style(sty),
-            );
+            let plan_btn = button(card)
+                .on_press(wrap(Message::Open(plan.id.clone())))
+                .padding([8u16, 12u16])
+                .width(Length::Fill)
+                .style(sty);
+
+            list_col = list_col.push(mouse_area(plan_btn).on_right_press(
+                RootMessage::ShowRailContextMenu(crate::ui::messages::RailContextTarget::Playlist(
+                    plan.id.clone(),
+                )),
+            ));
         }
     }
 
@@ -444,7 +497,7 @@ fn plan_list<'a>(
         .width(Length::Fill)
         .height(Length::Fill),
     )
-    .width(240)
+    .width(Length::Fill)
     .height(Length::Fill)
     .style(theme::dark_panel_style)
     .into()

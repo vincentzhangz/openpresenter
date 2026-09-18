@@ -9,7 +9,7 @@ use iced::{
 };
 use iced_font_awesome::fa_icon_solid;
 
-/// Messages owned by the Audio feature module (see `AGENTS.md`).
+/// Messages owned by the Audio feature module.
 #[derive(Debug, Clone)]
 pub enum Message {
     PickFile,

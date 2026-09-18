@@ -1,17 +1,17 @@
-use crate::domain::LibraryAsset;
+use crate::domain::{ImageFit, LibraryAsset, SlideContent};
 use crate::ui::components::{add_button, search_input, section_header, truncate};
 use crate::ui::main_window::MainWindow;
-use crate::ui::messages::Message as RootMessage;
+use crate::ui::messages::{Message as RootMessage, SidebarTab};
 use crate::ui::theme;
 use iced::{
-    Alignment, Background, Border, Color, Element, Length,
-    widget::{Column, Space, button, column, container, row, scrollable, text},
+    Alignment, Background, Border, Color, Element, Length, Task,
+    widget::{Column, Space, button, column, container, mouse_area, row, scrollable, text},
 };
 use iced_font_awesome::fa_icon_solid;
 
 pub const LIBRARY_PANEL_WIDTH: u16 = 240;
 
-/// Messages owned by the Library feature module (see `AGENTS.md`).
+/// Messages owned by the Library feature module.
 ///
 /// `SearchQueryChanged` and `SwitchSidebarTab` stay as root variants (global
 /// search / navigation state shared with the sidebar).
@@ -38,14 +38,95 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
 }
 
 /// Dispatch a library message.
-pub fn update(w: &mut MainWindow, msg: Message) -> iced::Task<RootMessage> {
-    use crate::ui::output;
+pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
     match msg {
-        Message::ImportAsset => output::library_import_asset(w),
-        Message::ApplyToSlide(id) => output::library_apply_to_slide(w, id),
-        Message::DeleteAsset(id) => output::library_delete_asset(w, id),
-        Message::SelectAsset(id) => output::library_select_asset(w, id),
+        Message::ImportAsset => library_import_asset(w),
+        Message::ApplyToSlide(id) => library_apply_to_slide(w, id),
+        Message::DeleteAsset(id) => library_delete_asset(w, id),
+        Message::SelectAsset(id) => library_select_asset(w, id),
     }
+}
+
+pub fn library_import_asset(w: &mut MainWindow) -> Task<RootMessage> {
+    let image_exts = ["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+    let video_exts = ["mp4", "mov", "avi", "mkv", "webm"];
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter(
+            "Images & Videos",
+            &[
+                "png", "jpg", "jpeg", "gif", "bmp", "webp", "mp4", "mov", "avi", "mkv", "webm",
+            ],
+        )
+        .set_title("Import Asset")
+        .pick_file()
+    {
+        let path_str = path.to_string_lossy().into_owned();
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        let media_type = if image_exts.contains(&ext.as_str()) {
+            "image"
+        } else if video_exts.contains(&ext.as_str()) {
+            "video"
+        } else {
+            "image"
+        };
+        match w.library.repo.add_asset(&path_str, media_type) {
+            Ok(_) => w.load_lib_assets(),
+            Err(e) => w.set_error(format!("library import: {e}")),
+        }
+        w.shell.sidebar_tab = SidebarTab::Library;
+    }
+    Task::none()
+}
+
+pub fn library_apply_to_slide(w: &mut MainWindow, asset_id: String) -> Task<RootMessage> {
+    let asset = w.library.assets.iter().find(|a| a.id == asset_id).cloned();
+    if let Some(asset) = asset {
+        if let Some(slide) = w.get_current_slide_mut() {
+            if asset.is_image() {
+                slide.content = SlideContent::Image {
+                    path: asset.path.clone(),
+                    fit: ImageFit::default(),
+                };
+            } else {
+                slide.content = SlideContent::Video {
+                    path: asset.path.clone(),
+                    thumbnail: None,
+                };
+            }
+            let c = slide.clone();
+            w.persist_slide(c);
+        }
+        w.library.recently_used_ids.retain(|id| id != &asset_id);
+        w.library.recently_used_ids.insert(0, asset_id);
+        w.library.recently_used_ids.truncate(6);
+    }
+    Task::none()
+}
+
+pub fn library_delete_asset(w: &mut MainWindow, asset_id: String) -> Task<RootMessage> {
+    match w.library.repo.delete_asset(&asset_id) {
+        Ok(_) => {
+            w.library.assets.retain(|a| a.id != asset_id);
+            w.library.recently_used_ids.retain(|id| id != &asset_id);
+            if w.library.selected_id.as_deref() == Some(&asset_id) {
+                w.library.selected_id = None;
+            }
+        }
+        Err(e) => w.set_error(format!("library delete: {e}")),
+    }
+    Task::none()
+}
+
+pub fn library_select_asset(w: &mut MainWindow, asset_id: String) -> Task<RootMessage> {
+    w.library.selected_id = if w.library.selected_id.as_deref() == Some(&asset_id) {
+        None
+    } else {
+        Some(asset_id)
+    };
+    Task::none()
 }
 
 pub fn library_panel<'a>(
@@ -132,10 +213,10 @@ pub fn library_panel<'a>(
         action_bar,
         import_btn,
     ]
-    .width(LIBRARY_PANEL_WIDTH as f32);
+    .width(Length::Fill);
 
     container(content)
-        .width(LIBRARY_PANEL_WIDTH as f32)
+        .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::panel_style)
         .into()
@@ -230,7 +311,7 @@ fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, RootMe
     ]
     .spacing(2);
 
-    button(card_inner)
+    let card_btn = button(card_inner)
         .on_press(wrap(Message::SelectAsset(select_id)))
         .width(Length::Fill)
         .padding([4, 4])
@@ -250,7 +331,12 @@ fn asset_card<'a>(asset: &'a LibraryAsset, selected: bool) -> Element<'a, RootMe
                 },
                 ..Default::default()
             }
-        })
+        });
+
+    mouse_area(card_btn)
+        .on_right_press(RootMessage::ShowRailContextMenu(
+            crate::ui::messages::RailContextTarget::LibraryAsset(asset.id.clone()),
+        ))
         .into()
 }
 

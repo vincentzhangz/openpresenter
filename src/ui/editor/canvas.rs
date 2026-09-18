@@ -5,10 +5,11 @@ use iced::{
     Background as IcedBg, Border, Color, ContentFit, Element, Event, Font, Length, Pixels, Point,
     Rectangle, Renderer, Size, Theme, alignment, font, mouse,
     widget::{
+        Space,
         canvas::{self, Action, Canvas, Frame, Geometry, Path},
-        container,
+        column, container,
         image::{Handle as ImageHandle, Image as IcedImage},
-        text,
+        responsive, row, stack, text, text_input,
     },
 };
 
@@ -41,6 +42,8 @@ pub struct CanvasState {
     drag_start_size: (f32, f32),
     dragging_layer: Option<usize>,
     drag_action: Option<DragAction>,
+    last_click_time: Option<std::time::Instant>,
+    last_click_target: Option<Option<usize>>,
 }
 
 impl Default for CanvasState {
@@ -52,6 +55,8 @@ impl Default for CanvasState {
             drag_start_size: (0.0, 0.0),
             dragging_layer: None,
             drag_action: None,
+            last_click_time: None,
+            last_click_target: None,
         }
     }
 }
@@ -59,6 +64,7 @@ impl Default for CanvasState {
 pub struct SlideProgram {
     pub slide: Option<Slide>,
     pub selected_layer_index: Option<usize>,
+    pub inline_editing: bool,
 }
 
 fn layer_hit_test(layer: &crate::domain::Object, x: f32, y: f32) -> bool {
@@ -118,6 +124,15 @@ impl canvas::Program<Message> for SlideProgram {
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if self.inline_editing {
+                    state.is_dragging = false;
+                    state.dragging_layer = None;
+                    state.drag_action = None;
+                    return Some(Action::publish(Message::from(
+                        slides::Message::EndInlineTextEditing,
+                    )));
+                }
+
                 if let Some(pos) = cursor.position_in(bounds)
                     && pos.x >= off_x
                     && pos.x <= off_x + slide_w
@@ -126,6 +141,13 @@ impl canvas::Program<Message> for SlideProgram {
                 {
                     let norm_x = (pos.x - off_x) / slide_w;
                     let norm_y = (pos.y - off_y) / slide_h;
+
+                    let now = std::time::Instant::now();
+                    let is_double_click = state
+                        .last_click_time
+                        .map(|t| now.duration_since(t).as_millis() < 500)
+                        .unwrap_or(false);
+                    state.last_click_time = Some(now);
 
                     let layers = slide.effective_layers();
                     if layers.is_empty() {
@@ -153,24 +175,49 @@ impl canvas::Program<Message> for SlideProgram {
                     let mut sorted = layers.iter().enumerate().collect::<Vec<_>>();
                     sorted.sort_by_key(|b| std::cmp::Reverse(b.1.z_order));
 
-                    for (idx, layer) in sorted {
+                    for (idx, layer) in &sorted {
                         if !layer.visible || layer.locked {
                             continue;
                         }
                         if layer_hit_test(layer, norm_x, norm_y) {
+                            if is_double_click
+                                && (state.last_click_target == Some(Some(*idx))
+                                    || self.selected_layer_index == Some(*idx))
+                                && matches!(layer.content, ObjectContent::Text { .. })
+                            {
+                                state.is_dragging = false;
+                                state.dragging_layer = None;
+                                state.drag_action = None;
+                                return Some(Action::publish(Message::from(
+                                    slides::Message::StartInlineTextEditing(Some(*idx)),
+                                )));
+                            }
+                            state.last_click_target = Some(Some(*idx));
                             state.is_dragging = true;
                             state.drag_start_mouse = Some(Point::new(norm_x, norm_y));
                             state.drag_start_text = (layer.position_x, layer.position_y);
                             state.drag_start_size = (layer.width, layer.height);
-                            state.dragging_layer = Some(idx);
+                            state.dragging_layer = Some(*idx);
                             state.drag_action = Some(DragAction::Move);
                             return Some(Action::publish(Message::from(
-                                layers::Message::LayerDragStarted(idx),
+                                layers::Message::LayerDragStarted(*idx),
                             )));
                         }
                     }
 
                     if let SlideContent::Text { style, .. } = &slide.content {
+                        if is_double_click
+                            && (state.last_click_target == Some(None)
+                                || self.selected_layer_index.is_none())
+                        {
+                            state.is_dragging = false;
+                            state.dragging_layer = None;
+                            state.drag_action = None;
+                            return Some(Action::publish(Message::from(
+                                slides::Message::StartInlineTextEditing(None),
+                            )));
+                        }
+                        state.last_click_target = Some(None);
                         state.is_dragging = true;
                         state.drag_start_mouse = Some(Point::new(norm_x, norm_y));
                         state.drag_start_text = (style.position_x, style.position_y);
@@ -291,7 +338,7 @@ impl canvas::Program<Message> for SlideProgram {
         let mut layers = slide.effective_layers().into_owned();
         layers.sort_by_key(|l| l.z_order);
 
-        for layer in &layers {
+        for (layer_idx, layer) in layers.iter().enumerate() {
             if !layer.visible {
                 continue;
             }
@@ -309,6 +356,9 @@ impl canvas::Program<Message> for SlideProgram {
                     style,
                     ..
                 } => {
+                    if self.inline_editing && self.selected_layer_index == Some(layer_idx) {
+                        continue;
+                    }
                     let display_content = style.text_transform.apply(content);
                     let text_color = Color::from_rgba8(
                         style.color.r,
@@ -632,6 +682,8 @@ pub fn canvas_panel<'a>(
     slide: Option<&'a Slide>,
     video_frame: Option<&'a iced::widget::image::Handle>,
     selected_layer_index: Option<usize>,
+    inline_editing: bool,
+    editing_text: &'a str,
 ) -> Element<'a, Message> {
     if let Some(s) = slide {
         match &s.content {
@@ -651,12 +703,91 @@ pub fn canvas_panel<'a>(
             _ => {}
         }
     }
-    Canvas::new(SlideProgram {
-        slide: slide.cloned(),
-        selected_layer_index,
+
+    let slide_clone = slide.cloned();
+
+    if !inline_editing {
+        return Canvas::new(SlideProgram {
+            slide: slide_clone,
+            selected_layer_index,
+            inline_editing: false,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+    }
+
+    let editing_text_owned = editing_text.to_string();
+
+    responsive(move |size| {
+        let (slide_w, slide_h, off_x, off_y) = letterbox(Rectangle::new(Point::ORIGIN, size));
+
+        let canvas_widget = Canvas::new(SlideProgram {
+            slide: slide_clone.clone(),
+            selected_layer_index,
+            inline_editing: true,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        let layers = slide_clone
+            .as_ref()
+            .map(|s| s.effective_layers())
+            .unwrap_or_default();
+
+        let active_layer = selected_layer_index.and_then(|idx| layers.get(idx));
+
+        if let Some(layer) = active_layer
+            && let ObjectContent::Text { ref style, .. } = layer.content
+        {
+            let cx = off_x + layer.position_x * slide_w;
+            let cy = off_y + layer.position_y * slide_h;
+            let lw = (layer.width * slide_w).max(140.0);
+            let lh = (layer.height * slide_h).max(38.0);
+            let lx = (cx - lw / 2.0).clamp(off_x, (off_x + slide_w - lw).max(off_x));
+            let ly = (cy - lh / 2.0).clamp(off_y, (off_y + slide_h - lh).max(off_y));
+
+            let scale = slide_h / 1080.0;
+            let font_sz = (style.font_size * scale).clamp(14.0, 72.0);
+            let text_color = Color::from_rgba8(
+                style.color.r,
+                style.color.g,
+                style.color.b,
+                style.color.a as f32 / 255.0,
+            );
+
+            let input = text_input("Type slide text…", &editing_text_owned)
+                .on_input(|v| Message::from(slides::Message::SlideTextChanged(v)))
+                .on_submit(Message::from(slides::Message::EndInlineTextEditing))
+                .size(font_sz)
+                .width(Length::Fill)
+                .style(move |_t: &Theme, _status| text_input::Style {
+                    background: IcedBg::Color(Color::from_rgba(0.06, 0.07, 0.10, 0.85)),
+                    border: Border {
+                        color: Color::from_rgb(0.20, 0.50, 1.00),
+                        width: 2.0,
+                        radius: 3.0.into(),
+                    },
+                    icon: Color::TRANSPARENT,
+                    placeholder: Color::from_rgba(1.0, 1.0, 1.0, 0.35),
+                    value: text_color,
+                    selection: Color::from_rgba(0.20, 0.50, 1.00, 0.35),
+                });
+
+            let input_box = container(input).width(lw).height(lh).center_y(lh);
+
+            let overlay = column![
+                Space::new().height(ly),
+                row![Space::new().width(lx), input_box,]
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            stack![canvas_widget, overlay].into()
+        } else {
+            canvas_widget.into()
+        }
     })
-    .width(Length::Fill)
-    .height(Length::Fill)
     .into()
 }
 

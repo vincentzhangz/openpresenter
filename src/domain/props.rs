@@ -131,13 +131,71 @@ impl std::fmt::Display for Mask {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScreenLookTarget {
+    pub screen_id: String,
+    #[serde(default = "default_true")]
+    pub media_enabled: bool,
+    #[serde(default = "default_true")]
+    pub slide_enabled: bool,
+    #[serde(default = "default_true")]
+    pub props_enabled: bool,
+    #[serde(default = "default_true")]
+    pub messages_enabled: bool,
+    #[serde(default)]
+    pub mask_enabled: bool,
+    #[serde(default)]
+    pub theme_id: Option<String>,
+}
+
+impl ScreenLookTarget {
+    pub fn default_for_screen(screen_id: impl Into<String>) -> Self {
+        Self {
+            screen_id: screen_id.into(),
+            media_enabled: true,
+            slide_enabled: true,
+            props_enabled: true,
+            messages_enabled: true,
+            mask_enabled: false,
+            theme_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LiveAlertMessage {
+    pub id: String,
+    pub text: String,
+    #[serde(default = "default_true")]
+    pub visible: bool,
+}
+
+impl LiveAlertMessage {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            text: text.into(),
+            visible: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Look {
     pub id: String,
     pub name: String,
+    #[serde(default)]
     pub mask: Mask,
+    #[serde(default)]
     pub active_prop_ids: Vec<String>,
+    #[serde(default)]
     pub theme_id: Option<String>,
+    #[serde(default)]
+    pub screens: Vec<ScreenLookTarget>,
 }
 
 impl Look {
@@ -148,18 +206,102 @@ impl Look {
             mask: Mask::None,
             active_prop_ids: Vec::new(),
             theme_id: None,
+            screens: Vec::new(),
+        }
+    }
+
+    pub fn target_for_screen(&self, screen_id: &str) -> Option<&ScreenLookTarget> {
+        self.screens.iter().find(|s| s.screen_id == screen_id)
+    }
+
+    pub fn target_for_screen_mut(&mut self, screen_id: &str) -> Option<&mut ScreenLookTarget> {
+        self.screens.iter_mut().find(|s| s.screen_id == screen_id)
+    }
+
+    pub fn target_or_default(&self, screen_id: &str) -> ScreenLookTarget {
+        self.target_for_screen(screen_id)
+            .cloned()
+            .unwrap_or_else(|| ScreenLookTarget::default_for_screen(screen_id))
+    }
+
+    pub fn set_screen_target(&mut self, target: ScreenLookTarget) {
+        if let Some(pos) = self
+            .screens
+            .iter()
+            .position(|s| s.screen_id == target.screen_id)
+        {
+            self.screens[pos] = target;
+        } else {
+            self.screens.push(target);
+        }
+    }
+
+    pub fn with_default_screens(name: impl Into<String>) -> Self {
+        let mut look = Self::new(name);
+        look.screens = vec![
+            ScreenLookTarget::default_for_screen("main"),
+            ScreenLookTarget {
+                screen_id: "stream".to_string(),
+                media_enabled: false,
+                slide_enabled: true,
+                props_enabled: true,
+                messages_enabled: true,
+                mask_enabled: false,
+                theme_id: None,
+            },
+            ScreenLookTarget {
+                screen_id: "stage".to_string(),
+                media_enabled: false,
+                slide_enabled: true,
+                props_enabled: false,
+                messages_enabled: true,
+                mask_enabled: false,
+                theme_id: None,
+            },
+        ];
+        look
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropManager {
+    pub props: Vec<Prop>,
+    pub looks: Vec<Look>,
+    #[serde(default)]
+    pub active_mask: Mask,
+    #[serde(default)]
+    pub active_look_id: Option<String>,
+    #[serde(default)]
+    pub live_message: Option<LiveAlertMessage>,
+}
+
+impl Default for PropManager {
+    fn default() -> Self {
+        Self {
+            props: Vec::new(),
+            looks: Vec::new(),
+            active_mask: Mask::None,
+            active_look_id: None,
+            live_message: None,
         }
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct PropManager {
-    pub props: Vec<Prop>,
-    pub looks: Vec<Look>,
-    pub active_mask: Mask,
-}
-
 impl PropManager {
+    pub fn with_default_looks() -> Self {
+        let default_look = Look::with_default_screens("Default");
+        let active_id = default_look.id.clone();
+        Self {
+            props: Vec::new(),
+            looks: vec![
+                default_look,
+                Look::with_default_screens("Broadcast / Lower Third"),
+            ],
+            active_mask: Mask::None,
+            active_look_id: Some(active_id),
+            live_message: None,
+        }
+    }
     pub fn toggle_prop(&mut self, id: &str) {
         if let Some(prop) = self.props.iter_mut().find(|p| p.id == id) {
             prop.visible = !prop.visible;
@@ -191,17 +333,45 @@ impl PropManager {
         self.looks.push(look);
     }
 
+    pub fn add_look(&mut self, look: Look) {
+        self.looks.push(look);
+    }
+
     pub fn apply_look(&mut self, look_id: &str) {
         if let Some(look) = self.looks.iter().find(|l| l.id == look_id).cloned() {
             self.active_mask = look.mask.clone();
+            self.active_look_id = Some(look.id.clone());
             for prop in &mut self.props {
                 prop.visible = look.active_prop_ids.contains(&prop.id);
             }
         }
     }
 
+    pub fn current_look(&self) -> Option<&Look> {
+        self.active_look_id
+            .as_deref()
+            .and_then(|id| self.looks.iter().find(|l| l.id == id))
+            .or_else(|| self.looks.first())
+    }
+
+    pub fn set_message(&mut self, text: impl Into<String>) {
+        let t = text.into();
+        if t.trim().is_empty() {
+            self.live_message = None;
+        } else {
+            self.live_message = Some(LiveAlertMessage::new(t));
+        }
+    }
+
+    pub fn clear_message(&mut self) {
+        self.live_message = None;
+    }
+
     pub fn remove_look(&mut self, id: &str) {
         self.looks.retain(|l| l.id != id);
+        if self.active_look_id.as_deref() == Some(id) {
+            self.active_look_id = None;
+        }
     }
 
     pub fn save_to_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
@@ -431,6 +601,40 @@ mod tests {
         let loaded =
             PropManager::load_from_file(std::path::Path::new("/nonexistent/nowhere/props.json"));
         assert!(loaded.props.is_empty());
-        assert!(loaded.looks.is_empty());
+    }
+
+    #[test]
+    fn screen_look_target_default_and_overrides() {
+        let mut target = ScreenLookTarget::default_for_screen("stream");
+        assert_eq!(target.screen_id, "stream");
+        assert!(target.media_enabled);
+        assert!(target.slide_enabled);
+
+        target.media_enabled = false;
+        target.theme_id = Some("lower-third-id".to_string());
+
+        let mut look = Look::new("Broadcast");
+        look.set_screen_target(target);
+
+        let retrieved = look.target_for_screen("stream").unwrap();
+        assert!(!retrieved.media_enabled);
+        assert_eq!(retrieved.theme_id.as_deref(), Some("lower-third-id"));
+
+        let unconfigured = look.target_or_default("stage");
+        assert_eq!(unconfigured.screen_id, "stage");
+        assert!(unconfigured.media_enabled);
+    }
+
+    #[test]
+    fn live_alert_message_toggle_and_clear() {
+        let mut pm = PropManager::default();
+        assert!(pm.live_message.is_none());
+
+        pm.set_message("Parent #402");
+        assert!(pm.live_message.is_some());
+        assert_eq!(pm.live_message.as_ref().unwrap().text, "Parent #402");
+
+        pm.clear_message();
+        assert!(pm.live_message.is_none());
     }
 }

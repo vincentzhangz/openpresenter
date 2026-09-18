@@ -4,7 +4,7 @@ use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message as RootMessage;
 use iced::Task;
 
-/// Messages owned by the Typography editor feature (see `AGENTS.md`).
+/// Messages owned by the Typography editor feature.
 #[derive(Debug, Clone)]
 pub enum Message {
     SelectedLayerFontFamilyChanged(String),

@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::domain::{Background, Slide, SlideContent, TextAlignment, Transition};
+use crate::domain::{Background, ObjectContent, Slide, TextAlignment, Transition};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -34,11 +34,8 @@ impl Frame {
     }
 
     pub fn clear(&mut self, r: u8, g: u8, b: u8, a: u8) {
-        for pixel in Arc::make_mut(&mut self.data).chunks_exact_mut(4) {
-            pixel[0] = b;
-            pixel[1] = g;
-            pixel[2] = r;
-            pixel[3] = a;
+        for pixel in Arc::make_mut(&mut self.data).as_chunks_mut::<4>().0 {
+            *pixel = [b, g, r, a];
         }
     }
 
@@ -192,40 +189,234 @@ impl RenderPipeline {
         slide: &Slide,
         video_frame: Option<&crate::media::decoder::RgbaFrame>,
     ) {
-        match &slide.content {
-            SlideContent::Text { text, style } => {
-                if let Some(ref mut gpu) = self.gpu_text {
-                    match gpu.render_text(text, style, &[], self.width, self.height) {
-                        Ok(overlay) => {
-                            let buf: &mut Vec<u8> = Arc::make_mut(&mut frame.data);
-                            GpuTextRenderer::composite_bgra(buf, &overlay);
-                            return;
-                        }
-                        Err(e) => {
-                            eprintln!("⚠ GPU text render failed, using pixel font: {}", e);
+        let mut layers = slide.effective_layers().into_owned();
+        layers.sort_by_key(|l| l.z_order);
+
+        for layer in &layers {
+            if !layer.visible || layer.opacity <= 0.0 {
+                continue;
+            }
+            match &layer.content {
+                ObjectContent::Text { text, style, .. } => {
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    if let Some(ref mut gpu) = self.gpu_text {
+                        match gpu.render_text(text, style, &[], self.width, self.height) {
+                            Ok(overlay) => {
+                                let buf: &mut Vec<u8> = Arc::make_mut(&mut frame.data);
+                                GpuTextRenderer::composite_bgra(buf, &overlay);
+                                continue;
+                            }
+                            Err(e) => {
+                                eprintln!("⚠ GPU text render failed, using pixel font: {}", e);
+                            }
                         }
                     }
+                    let x = (layer.position_x * self.width as f32) as u32;
+                    let y = (layer.position_y * self.height as f32) as u32;
+                    self.draw_text_bitmap(
+                        frame,
+                        text,
+                        x,
+                        y,
+                        style.font_size,
+                        style.color,
+                        style.alignment,
+                        style.shadow,
+                        style.outline,
+                    );
                 }
-                let x = (style.position_x * self.width as f32) as u32;
-                let y = (style.position_y * self.height as f32) as u32;
-                self.draw_text_bitmap(
-                    frame,
-                    text,
-                    x,
-                    y,
-                    style.font_size,
-                    style.color,
-                    style.alignment,
-                    style.shadow,
-                    style.outline,
-                );
-            }
-            SlideContent::Image { .. } => {}
-            SlideContent::Video { .. } => {
-                if let Some(vf) = video_frame {
-                    composite_rgba_to_bgra(frame, vf);
+                ObjectContent::Shape {
+                    shape_type,
+                    fill,
+                    stroke_color,
+                    stroke_width,
+                    ..
+                } => {
+                    let start_x = ((layer.position_x - layer.width / 2.0).max(0.0)
+                        * self.width as f32) as u32;
+                    let start_y = ((layer.position_y - layer.height / 2.0).max(0.0)
+                        * self.height as f32) as u32;
+                    let end_x = ((layer.position_x + layer.width / 2.0).min(1.0)
+                        * self.width as f32) as u32;
+                    let end_y = ((layer.position_y + layer.height / 2.0).min(1.0)
+                        * self.height as f32) as u32;
+                    self.draw_shape(
+                        frame,
+                        *shape_type,
+                        start_x,
+                        start_y,
+                        end_x,
+                        end_y,
+                        *fill,
+                        *stroke_color,
+                        *stroke_width,
+                        layer.opacity,
+                    );
+                }
+                ObjectContent::Image { path, .. } => {
+                    if !path.is_empty() {
+                        let start_x = ((layer.position_x - layer.width / 2.0).max(0.0)
+                            * self.width as f32) as u32;
+                        let start_y = ((layer.position_y - layer.height / 2.0).max(0.0)
+                            * self.height as f32) as u32;
+                        let w = ((layer.width * self.width as f32).max(1.0)) as u32;
+                        let h = ((layer.height * self.height as f32).max(1.0)) as u32;
+                        self.draw_image_rect(frame, path, start_x, start_y, w, h, layer.opacity);
+                    }
+                }
+                ObjectContent::Video { .. } => {
+                    if let Some(vf) = video_frame {
+                        composite_rgba_to_bgra(frame, vf);
+                    }
                 }
             }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_shape(
+        &self,
+        frame: &mut Frame,
+        shape_type: crate::domain::ShapeType,
+        start_x: u32,
+        start_y: u32,
+        end_x: u32,
+        end_y: u32,
+        fill: crate::domain::Color,
+        stroke_color: crate::domain::Color,
+        stroke_width: f32,
+        opacity: f32,
+    ) {
+        if start_x >= end_x || start_y >= end_y {
+            return;
+        }
+        let w = end_x - start_x;
+        let h = end_y - start_y;
+        let stroke_px = stroke_width.max(0.0) as u32;
+        let buf = Arc::make_mut(&mut frame.data);
+
+        for y in start_y..end_y {
+            for x in start_x..end_x {
+                let is_inside = match shape_type {
+                    crate::domain::ShapeType::Rectangle | crate::domain::ShapeType::Line => true,
+                    crate::domain::ShapeType::Ellipse => {
+                        let cx = start_x as f32 + w as f32 / 2.0;
+                        let cy = start_y as f32 + h as f32 / 2.0;
+                        let rx = (w as f32 / 2.0).max(1.0);
+                        let ry = (h as f32 / 2.0).max(1.0);
+                        let dx = (x as f32 - cx) / rx;
+                        let dy = (y as f32 - cy) / ry;
+                        dx * dx + dy * dy <= 1.0
+                    }
+                    crate::domain::ShapeType::Triangle => {
+                        let norm_x = (x - start_x) as f32 / w.max(1) as f32;
+                        let norm_y = (y - start_y) as f32 / h.max(1) as f32;
+                        norm_y >= 0.0
+                            && norm_x >= (1.0 - norm_y) / 2.0
+                            && norm_x <= 1.0 - (1.0 - norm_y) / 2.0
+                    }
+                };
+                if !is_inside {
+                    continue;
+                }
+                let is_border = stroke_px > 0
+                    && (x < start_x + stroke_px
+                        || x + stroke_px >= end_x
+                        || y < start_y + stroke_px
+                        || y + stroke_px >= end_y);
+                let col = if is_border { stroke_color } else { fill };
+                Self::blend_pixel(buf, self.width, x, y, col, opacity);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_image_rect(
+        &mut self,
+        frame: &mut Frame,
+        path: &str,
+        dest_x: u32,
+        dest_y: u32,
+        dest_w: u32,
+        dest_h: u32,
+        opacity: f32,
+    ) {
+        if dest_w == 0 || dest_h == 0 {
+            return;
+        }
+        if !self.image_cache.contains(path) {
+            match image::open(path) {
+                Ok(img) => {
+                    self.image_cache.put(path.to_string(), img.to_rgba8());
+                }
+                Err(e) => {
+                    eprintln!("draw_image_rect load error '{path}': {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(img) = self.image_cache.get(path) {
+            let src_w = img.width() as usize;
+            let src_h = img.height() as usize;
+            let fw = self.width;
+            let buf = Arc::make_mut(&mut frame.data);
+
+            for dy in 0..dest_h {
+                let py = dest_y + dy;
+                if py >= self.height {
+                    break;
+                }
+                let sy = (dy as usize * src_h) / dest_h as usize;
+                for dx in 0..dest_w {
+                    let px = dest_x + dx;
+                    if px >= self.width {
+                        break;
+                    }
+                    let sx = (dx as usize * src_w) / dest_w as usize;
+                    let pixel = img.get_pixel(sx as u32, sy as u32);
+                    let [r, g, b, a] = pixel.0;
+                    Self::blend_pixel(
+                        buf,
+                        fw,
+                        px,
+                        py,
+                        crate::domain::Color { r, g, b, a },
+                        opacity,
+                    );
+                }
+            }
+        }
+    }
+
+    fn blend_pixel(
+        buf: &mut [u8],
+        frame_width: u32,
+        x: u32,
+        y: u32,
+        color: crate::domain::Color,
+        layer_opacity: f32,
+    ) {
+        let idx = ((y * frame_width + x) * 4) as usize;
+        if idx + 3 >= buf.len() {
+            return;
+        }
+        let alpha = (color.a as f32 / 255.0) * layer_opacity.clamp(0.0, 1.0);
+        if alpha <= 0.0 {
+            return;
+        }
+        if alpha >= 1.0 {
+            buf[idx] = color.b;
+            buf[idx + 1] = color.g;
+            buf[idx + 2] = color.r;
+            buf[idx + 3] = 255;
+        } else {
+            let ia = 1.0 - alpha;
+            buf[idx] = (buf[idx] as f32 * ia + color.b as f32 * alpha) as u8;
+            buf[idx + 1] = (buf[idx + 1] as f32 * ia + color.g as f32 * alpha) as u8;
+            buf[idx + 2] = (buf[idx + 2] as f32 * ia + color.r as f32 * alpha) as u8;
+            buf[idx + 3] = 255;
         }
     }
 
@@ -535,5 +726,97 @@ fn pixel_font(c: char) -> [u8; 7] {
         '}' => [0x08,0x04,0x04,0x02,0x04,0x04,0x08],
         '~' => [0x00,0x08,0x15,0x02,0x00,0x00,0x00],
         _   => [0x0E,0x11,0x15,0x1B,0x15,0x11,0x0E],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{Object, ShapeType, Slide};
+
+    #[test]
+    fn frame_new_and_clear() {
+        let mut frame = Frame::new(10, 10);
+        assert_eq!(frame.width, 10);
+        assert_eq!(frame.height, 10);
+        assert_eq!(frame.data.len(), 400);
+
+        frame.clear(255, 128, 64, 255);
+        // BGRA format: byte 0 is B, 1 is G, 2 is R, 3 is A
+        assert_eq!(frame.data[0], 64);
+        assert_eq!(frame.data[1], 128);
+        assert_eq!(frame.data[2], 255);
+        assert_eq!(frame.data[3], 255);
+    }
+
+    #[test]
+    fn frame_set_pixel() {
+        let mut frame = Frame::new(4, 4);
+        frame.set_pixel(2, 2, 200, 100, 50, 255);
+        let idx = (2 * 4 + 2) * 4;
+        assert_eq!(frame.data[idx], 50); // B
+        assert_eq!(frame.data[idx + 1], 100); // G
+        assert_eq!(frame.data[idx + 2], 200); // R
+        assert_eq!(frame.data[idx + 3], 255); // A
+
+        // Out of bounds should be a safe no-op
+        frame.set_pixel(10, 10, 0, 0, 0, 0);
+    }
+
+    #[test]
+    fn frame_blend_over() {
+        let mut f1 = Frame::new(2, 2);
+        f1.clear(0, 0, 0, 255);
+        let mut f2 = Frame::new(2, 2);
+        f2.clear(200, 200, 200, 255);
+
+        let blended = f1.blend_over(&f2, 0.5);
+        assert_eq!(blended.width, 2);
+        assert_eq!(blended.height, 2);
+        assert_eq!(blended.data[0], 100);
+    }
+
+    #[test]
+    fn transition_frames_generation() {
+        let f1 = Frame::new(10, 10);
+        let f2 = Frame::new(10, 10);
+
+        let cut = transition_frames(&f1, &f2, Transition::Cut, 30.0);
+        assert!(cut.is_empty());
+
+        let fade = transition_frames(&f1, &f2, Transition::Fade { duration_ms: 100 }, 30.0);
+        assert_eq!(fade.len(), 3);
+
+        let slide = transition_frames(&f1, &f2, Transition::Slide { duration_ms: 100 }, 30.0);
+        assert_eq!(slide.len(), 3);
+    }
+
+    #[test]
+    fn render_pipeline_software_render_slide_with_objects() {
+        let mut pipeline = RenderPipeline::new_software(64, 64);
+        let black = pipeline.render_black();
+        assert_eq!(black.width, 64);
+        assert_eq!(black.height, 64);
+        assert_eq!(black.data[0], 0);
+
+        let mut slide = Slide::new_text("Hello".to_string());
+        slide.layers.push(Object::new_shape(ShapeType::Rectangle));
+        let frame = pipeline.render_slide(&slide).unwrap();
+        assert_eq!(frame.width, 64);
+        assert_eq!(frame.height, 64);
+        // The frame should contain rendered non-zero pixel data
+        assert!(frame.data.iter().any(|&b| b > 0));
+    }
+
+    #[test]
+    fn pixel_font_contains_ascii() {
+        for c in 'A'..='Z' {
+            let glyph = pixel_font(c);
+            assert!(glyph.iter().any(|&row| row > 0));
+        }
+        for c in '0'..='9' {
+            let glyph = pixel_font(c);
+            assert!(glyph.iter().any(|&row| row > 0));
+        }
     }
 }

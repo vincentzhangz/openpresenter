@@ -6,12 +6,15 @@ use crate::ui::presenter::TransitionState;
 use crate::ui::presenter::canvas::{next_slide_canvas_panel, presenter_canvas_panel};
 use crate::ui::theme;
 use iced::{
-    Alignment, Background, Border, Element, Length,
+    Alignment, Background, Border, Color, Element, Length,
     widget::{Space, button, column, container, row, scrollable, text},
 };
 use iced_font_awesome::fa_icon_solid;
 
-/// Messages owned by the Stage feature module (see `AGENTS.md`).
+use crate::ui::messages::ViewMode;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Messages owned by the Stage feature module.
 ///
 /// `ToggleStageDisplay` (global display-mode toggle, emitted from the navbar
 /// and Show view) and `ClockTick` (subscription-injected tick) stay as root
@@ -38,15 +41,67 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
         w.presenting.clock_secs,
         w.presenting.timer_secs,
         w.presenting.timer_running,
+        w.props
+            .manager
+            .live_message
+            .as_ref()
+            .filter(|m| m.visible)
+            .map(|m| m.text.as_str()),
     )
 }
 
 /// Dispatch a stage message.
 pub fn update(w: &mut MainWindow, msg: Message) -> iced::Task<RootMessage> {
     match msg {
-        Message::ToggleTimer => crate::ui::output::toggle_timer(w),
-        Message::ResetTimer => crate::ui::output::reset_timer(w),
+        Message::ToggleTimer => toggle_timer(w),
+        Message::ResetTimer => reset_timer(w),
     }
+}
+
+pub fn toggle_stage_display(w: &mut MainWindow) -> iced::Task<RootMessage> {
+    if w.shell.current_mode == ViewMode::Show {
+        w.presenting.stage_display_active = !w.presenting.stage_display_active;
+    }
+    iced::Task::none()
+}
+
+pub fn clock_tick(w: &mut MainWindow) -> iced::Task<RootMessage> {
+    w.presenting.clock_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() % 86400)
+        .unwrap_or(0);
+    if w.presenting.timer_running {
+        let now_epoch = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        w.presenting.timer_secs = now_epoch.saturating_sub(w.presenting.timer_start_epoch);
+    }
+    iced::Task::none()
+}
+
+pub fn toggle_timer(w: &mut MainWindow) -> iced::Task<RootMessage> {
+    if w.presenting.timer_running {
+        w.presenting.timer_running = false;
+    } else {
+        let now_epoch = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        w.presenting.timer_start_epoch = now_epoch.saturating_sub(w.presenting.timer_secs);
+        w.presenting.timer_running = true;
+    }
+    iced::Task::none()
+}
+
+pub fn reset_timer(w: &mut MainWindow) -> iced::Task<RootMessage> {
+    w.presenting.timer_secs = 0;
+    w.presenting.timer_running = false;
+    w.presenting.timer_start_epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    iced::Task::none()
 }
 
 pub fn stage_view<'a>(
@@ -56,6 +111,7 @@ pub fn stage_view<'a>(
     clock_secs: u64,
     timer_secs: u64,
     timer_running: bool,
+    live_message: Option<&'a str>,
 ) -> Element<'a, RootMessage> {
     let top_bar = stage_toolbar(clock_secs, timer_secs, timer_running);
 
@@ -76,8 +132,9 @@ pub fn stage_view<'a>(
         .into();
     }
 
-    let current = &presentation.slides[slide_index];
-    let next_slide = presentation.slides.get(slide_index + 1);
+    let idx = slide_index.min(presentation.slides.len().saturating_sub(1));
+    let current = &presentation.slides[idx];
+    let next_slide = presentation.slides.get(idx + 1);
 
     let (from_slide, trans_type, trans_progress) = match transition {
         Some(ts) => (Some(&ts.from_slide), ts.transition, ts.progress),
@@ -103,9 +160,35 @@ pub fn stage_view<'a>(
 
     let notes_panel = notes_section(current);
 
-    let body = column![top_panels, notes_panel]
+    let mut body = column![top_panels, notes_panel]
         .width(Length::Fill)
         .height(Length::Fill);
+
+    if let Some(msg) = live_message {
+        let alert_banner = container(
+            row![
+                fa_icon_solid("bullhorn")
+                    .size(16.0_f32)
+                    .color(theme::WARNING_AMBER),
+                Space::new().width(10),
+                text(msg).size(16).color(theme::WARNING_AMBER),
+            ]
+            .align_y(Alignment::Center)
+            .padding([8, 16]),
+        )
+        .width(Length::Fill)
+        .style(|_: &iced::Theme| iced::widget::container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.95, 0.65, 0.1, 0.2))),
+            border: Border {
+                color: theme::WARNING_AMBER,
+                width: 1.5,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        });
+
+        body = column![alert_banner, body].spacing(6);
+    }
 
     container(column![top_bar, body])
         .width(Length::Fill)

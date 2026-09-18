@@ -1,14 +1,16 @@
 use crate::domain::{Presentation, Slide, Song, Transition, Verse};
-use crate::ui::components::{
-    add_button, divider, field_col, search_input, section_header, tab_bar, tab_btn,
-};
+use crate::ui::components::{add_button, divider, field_col, search_input};
 use crate::ui::main_window::MainWindow;
-use crate::ui::messages::{Message as RootMessage, SidebarTab};
+use crate::ui::messages::Message as RootMessage;
 use crate::ui::theme;
 use iced::{
     Alignment, Element, Length, Padding, Task,
-    widget::{Column, Row, Space, button, column, container, row, scrollable, text, text_input},
+    widget::{
+        Column, Row, Space, button, column, container, mouse_area, row, scrollable, text,
+        text_input,
+    },
 };
+use iced_font_awesome::fa_icon_solid;
 use uuid::Uuid;
 
 pub const VERSE_LABEL_PRESETS: &[&str] = &[
@@ -27,7 +29,7 @@ pub const VERSE_LABEL_PRESETS: &[&str] = &[
     "Ending",
 ];
 
-/// Messages owned by the Songs feature module (see `AGENTS.md`).
+/// Messages owned by the Songs feature module.
 #[derive(Debug, Clone)]
 pub enum Message {
     SearchChanged(String),
@@ -58,18 +60,50 @@ fn wrap(msg: Message) -> RootMessage {
 
 /// Render the songs panel.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
-    songs_panel(
+    editor_view(w)
+}
+
+/// Render the song list for the left rail sidebar.
+pub fn list_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    song_list(
         &w.song.songs,
         &w.song.search,
-        w.song.editing.as_ref(),
-        &w.song.edit_title,
-        &w.song.edit_artist,
-        &w.song.edit_copyright,
-        &w.song.edit_ccli,
-        &w.song.edit_key,
-        &w.song.edit_bpm,
-        w.shell.sidebar_tab,
+        w.song.editing.as_ref().map(|s| s.id.as_str()),
     )
+}
+
+/// Render the song editor for the center workspace.
+pub fn editor_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    if let Some(song) = w.song.editing.as_ref() {
+        song_editor(
+            song,
+            &w.song.edit_title,
+            &w.song.edit_artist,
+            &w.song.edit_copyright,
+            &w.song.edit_ccli,
+            &w.song.edit_key,
+            &w.song.edit_bpm,
+        )
+    } else {
+        container(
+            column![
+                fa_icon_solid("music")
+                    .size(32.0_f32)
+                    .color(theme::TEXT_MUTED),
+                text("Select a song from the sidebar, or click + New Song")
+                    .size(14)
+                    .color(theme::TEXT_MUTED),
+            ]
+            .spacing(10)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .style(theme::canvas_bg_style)
+        .into()
+    }
 }
 
 /// Dispatch a songs message.
@@ -305,33 +339,31 @@ pub(crate) fn song_to_presentation(w: &mut MainWindow) -> Task<RootMessage> {
     };
 
     match w.services.presentations.create(&pres_name) {
-        Ok(_) => {
-            w.load_presentations();
-            if let Some(new_pres) = w.editor.presentations.first().cloned() {
-                if let Err(e) = w
-                    .services
-                    .presentations
-                    .replace_slides(&new_pres.id, &pres.slides)
-                {
-                    w.set_error(format!("song_to_presentation replace slides: {e}"));
-                }
-                w.editor.editing = Some(Presentation {
-                    id: new_pres.id,
-                    name: new_pres.name,
-                    slides: pres.slides,
-                    created_at: new_pres.created_at,
-                    updated_at: new_pres.updated_at,
-                });
-                w.editor.selected_slide_index =
-                    if w.editor.editing.as_ref().map_or(0, |p| p.slides.len()) > 0 {
-                        Some(0)
-                    } else {
-                        None
-                    };
-                w.shell.current_mode = crate::ui::messages::ViewMode::Edit;
-                w.shell.sidebar_tab = crate::ui::messages::SidebarTab::Presentations;
-                w.load_slide_for_editing();
+        Ok(new_pres) => {
+            if let Err(e) = w
+                .services
+                .presentations
+                .replace_slides(&new_pres.id, &pres.slides)
+            {
+                w.set_error(format!("song_to_presentation replace slides: {e}"));
             }
+            w.load_presentations();
+            w.editor.editing = Some(Presentation {
+                id: new_pres.id,
+                name: new_pres.name,
+                slides: pres.slides,
+                created_at: new_pres.created_at,
+                updated_at: new_pres.updated_at,
+            });
+            w.editor.selected_slide_index =
+                if w.editor.editing.as_ref().map_or(0, |p| p.slides.len()) > 0 {
+                    Some(0)
+                } else {
+                    None
+                };
+            w.shell.current_mode = crate::ui::messages::ViewMode::Edit;
+            w.shell.sidebar_tab = crate::ui::messages::SidebarTab::Presentations;
+            w.load_slide_for_editing();
         }
         Err(e) => w.set_error(format!("song_to_presentation create: {e}")),
     }
@@ -359,82 +391,11 @@ fn next_verse_label(existing: usize) -> String {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn songs_panel<'a>(
-    songs: &'a [Song],
-    search: &'a str,
-    editing: Option<&'a Song>,
-    edit_title: &'a str,
-    edit_artist: &'a str,
-    edit_copyright: &'a str,
-    edit_ccli: &'a str,
-    edit_key: &'a str,
-    edit_bpm: &'a str,
-    sidebar_tab: SidebarTab,
-) -> Element<'a, RootMessage> {
-    let list = song_list(songs, search, editing.map(|s| s.id.as_str()), sidebar_tab);
-
-    let editor: Element<'a, RootMessage> = if let Some(song) = editing {
-        song_editor(
-            song,
-            edit_title,
-            edit_artist,
-            edit_copyright,
-            edit_ccli,
-            edit_key,
-            edit_bpm,
-        )
-    } else {
-        container(
-            text("Select a song or create a new one")
-                .size(14)
-                .color(theme::TEXT_MUTED),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(theme::canvas_bg_style)
-        .into()
-    };
-
-    row![list, editor]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
 fn song_list<'a>(
     songs: &'a [Song],
     search: &'a str,
     active_id: Option<&'a str>,
-    sidebar_tab: SidebarTab,
 ) -> Element<'a, RootMessage> {
-    let tabs = tab_bar(vec![
-        tab_btn(
-            "Slides",
-            sidebar_tab == SidebarTab::Presentations,
-            RootMessage::SwitchSidebarTab(SidebarTab::Presentations),
-        ),
-        tab_btn(
-            "Library",
-            sidebar_tab == SidebarTab::Library,
-            RootMessage::SwitchSidebarTab(SidebarTab::Library),
-        ),
-        tab_btn(
-            "Songs",
-            sidebar_tab == SidebarTab::Songs,
-            RootMessage::SwitchSidebarTab(SidebarTab::Songs),
-        ),
-        tab_btn(
-            "Bible",
-            sidebar_tab == SidebarTab::Bible,
-            RootMessage::SwitchSidebarTab(SidebarTab::Bible),
-        ),
-    ]);
-
-    let header = section_header("SONGS");
-
     let search_bar = search_input("Search songs...", search, move |v| {
         wrap(Message::SearchChanged(v))
     });
@@ -459,30 +420,47 @@ fn song_list<'a>(
 
             let card_content = column![text(song.title.clone()).size(13), artist_el].spacing(2);
 
-            list_col = list_col.push(
-                button(card_content)
-                    .on_press(wrap(Message::Open(song.id.clone())))
-                    .padding([8u16, 12u16])
-                    .width(Length::Fill)
-                    .style(card_style),
-            );
+            let song_btn = button(card_content)
+                .on_press(wrap(Message::Open(song.id.clone())))
+                .padding([8u16, 12u16])
+                .width(Length::Fill)
+                .style(card_style);
+
+            list_col = list_col.push(mouse_area(song_btn).on_right_press(
+                RootMessage::ShowRailContextMenu(crate::ui::messages::RailContextTarget::Song(
+                    song.id.clone(),
+                )),
+            ));
         }
     }
 
+    let import_btn = button(
+        row![
+            fa_icon_solid("file-import").size(11.0_f32),
+            text("Import OpenLyrics").size(11),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+    )
+    .on_press(RootMessage::ImportExport(
+        crate::ui::import_export::Message::ImportOpenLyrics,
+    ))
+    .padding([5, 10])
+    .style(theme::ghost_button);
+
     container(
         column![
-            tabs,
-            header,
             search_bar,
             scrollable(list_col)
                 .height(Length::Fill)
                 .width(Length::Fill),
+            import_btn,
             add_button("New Song", wrap(Message::New)),
         ]
         .width(Length::Fill)
         .height(Length::Fill),
     )
-    .width(240)
+    .width(Length::Fill)
     .height(Length::Fill)
     .style(theme::panel_style)
     .into()
@@ -544,6 +522,19 @@ fn song_editor<'a>(
         button(text("Send to Presentation").size(13))
             .on_press(wrap(Message::ToPresentation))
             .style(theme::secondary_button),
+        button(
+            row![
+                fa_icon_solid("file-export").size(11.0_f32),
+                text("Export OpenLyrics").size(12),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        )
+        .on_press(RootMessage::ImportExport(
+            crate::ui::import_export::Message::ExportOpenLyrics,
+        ))
+        .padding([5, 10])
+        .style(theme::ghost_button),
         Space::new().width(Length::Fill),
         button(text("Delete Song").size(12))
             .on_press(wrap(Message::DeleteClicked(song.id.clone())))

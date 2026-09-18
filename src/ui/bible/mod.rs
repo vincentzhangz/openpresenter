@@ -1,7 +1,7 @@
 use crate::domain::{
     BibleImportFile, BibleTranslation, BibleVerse, Presentation, Slide, Transition,
 };
-use crate::ui::components::{divider, section_header, tab_bar, tab_btn};
+use crate::ui::components::divider;
 use crate::ui::main_window::MainWindow;
 use crate::ui::messages::{Message as RootMessage, SidebarTab, ViewMode};
 use crate::ui::theme;
@@ -14,7 +14,7 @@ use iced::{
 use iced_font_awesome::fa_icon_solid;
 use uuid::Uuid;
 
-/// Messages owned by the Bible feature module (see `AGENTS.md`).
+/// Messages owned by the Bible feature module.
 #[derive(Debug, Clone)]
 pub enum Message {
     TranslationSelected(String),
@@ -38,9 +38,20 @@ fn wrap(msg: Message) -> RootMessage {
 
 /// Render the bible panel.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
-    bible_panel(
+    browser_view(w)
+}
+
+/// Render the bible translation list for the left rail sidebar.
+pub fn list_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    translation_list(
         &w.bible.translations,
         w.bible.selected_translation.as_deref(),
+    )
+}
+
+/// Render the scripture verse browser for the center workspace.
+pub fn browser_view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
+    verse_browser(
         &w.bible.books,
         w.bible.selected_book.as_deref(),
         &w.bible.chapters,
@@ -49,7 +60,6 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
         &w.bible.selected_verse_indices,
         &w.bible.search,
         w.bible.verses_per_slide,
-        w.shell.sidebar_tab,
     )
 }
 
@@ -252,28 +262,26 @@ pub(crate) fn send_to_presentation(w: &mut MainWindow) -> Task<RootMessage> {
     };
 
     match w.services.presentations.create(&pres_name) {
-        Ok(_) => {
-            w.load_presentations();
-            if let Some(new_pres) = w.editor.presentations.first().cloned() {
-                if let Err(e) = w
-                    .services
-                    .presentations
-                    .replace_slides(&new_pres.id, &pres.slides)
-                {
-                    w.set_error(format!("bible send_to_presentation replace: {e}"));
-                }
-                w.editor.editing = Some(Presentation {
-                    id: new_pres.id.clone(),
-                    name: new_pres.name,
-                    slides: pres.slides,
-                    created_at: new_pres.created_at,
-                    updated_at: new_pres.updated_at,
-                });
-                w.editor.selected_slide_index = Some(0);
-                w.shell.current_mode = ViewMode::Edit;
-                w.shell.sidebar_tab = SidebarTab::Presentations;
-                w.load_slide_for_editing();
+        Ok(new_pres) => {
+            if let Err(e) = w
+                .services
+                .presentations
+                .replace_slides(&new_pres.id, &pres.slides)
+            {
+                w.set_error(format!("bible send_to_presentation replace: {e}"));
             }
+            w.load_presentations();
+            w.editor.editing = Some(Presentation {
+                id: new_pres.id.clone(),
+                name: new_pres.name,
+                slides: pres.slides,
+                created_at: new_pres.created_at,
+                updated_at: new_pres.updated_at,
+            });
+            w.editor.selected_slide_index = Some(0);
+            w.shell.current_mode = ViewMode::Edit;
+            w.shell.sidebar_tab = SidebarTab::Presentations;
+            w.load_slide_for_editing();
         }
         Err(e) => w.set_error(format!("bible send_to_presentation create: {e}")),
     }
@@ -306,10 +314,8 @@ pub(crate) fn import_file(w: &mut MainWindow) -> Task<RootMessage> {
         }
     };
 
-    let abbr = file.abbr.clone();
     match w.bible.repo.import_translation(file) {
-        Ok(tr) => {
-            eprintln!("Imported Bible translation: {} ({})", tr.name, abbr);
+        Ok(_tr) => {
             w.load_bible_translations();
         }
         Err(e) => w.set_error(format!("bible import save: {e}")),
@@ -344,67 +350,10 @@ pub(crate) fn cancel_delete(w: &mut MainWindow) -> Task<RootMessage> {
     Task::none()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn bible_panel<'a>(
-    translations: &'a [BibleTranslation],
-    selected_translation: Option<&'a str>,
-    books: &'a [String],
-    selected_book: Option<&'a str>,
-    chapters: &'a [i32],
-    selected_chapter: Option<i32>,
-    verses: &'a [BibleVerse],
-    selected_verse_indices: &'a [usize],
-    search: &'a str,
-    verses_per_slide: usize,
-    sidebar_tab: SidebarTab,
-) -> Element<'a, RootMessage> {
-    let left = translation_list(translations, selected_translation, sidebar_tab);
-    let right = verse_browser(
-        books,
-        selected_book,
-        chapters,
-        selected_chapter,
-        verses,
-        selected_verse_indices,
-        search,
-        verses_per_slide,
-    );
-    row![left, right]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
 fn translation_list<'a>(
     translations: &'a [BibleTranslation],
     selected_id: Option<&'a str>,
-    sidebar_tab: SidebarTab,
 ) -> Element<'a, RootMessage> {
-    let tabs = tab_bar(vec![
-        tab_btn(
-            "Slides",
-            sidebar_tab == SidebarTab::Presentations,
-            RootMessage::SwitchSidebarTab(SidebarTab::Presentations),
-        ),
-        tab_btn(
-            "Library",
-            sidebar_tab == SidebarTab::Library,
-            RootMessage::SwitchSidebarTab(SidebarTab::Library),
-        ),
-        tab_btn(
-            "Songs",
-            sidebar_tab == SidebarTab::Songs,
-            RootMessage::SwitchSidebarTab(SidebarTab::Songs),
-        ),
-        tab_btn(
-            "Bible",
-            sidebar_tab == SidebarTab::Bible,
-            RootMessage::SwitchSidebarTab(SidebarTab::Bible),
-        ),
-    ]);
-
-    let header = section_header("TRANSLATIONS");
-
     let mut list = Column::new().spacing(2).padding([4u16, 0u16]);
     if translations.is_empty() {
         list = list.push(
@@ -456,17 +405,11 @@ fn translation_list<'a>(
         Space::new().width(Length::Fill).height(0).into()
     };
 
-    column![
-        tabs,
-        header,
-        scrollable_list,
-        divider(),
-        import_btn,
-        delete_btn
-    ]
-    .width(240)
-    .height(Length::Fill)
-    .into()
+    column![scrollable_list, divider(), import_btn, delete_btn]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]

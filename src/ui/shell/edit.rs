@@ -156,6 +156,8 @@ fn canvas_workspace<'a>(
         current_slide,
         video_frame,
         selected_layer_index,
+        false,
+        "",
     ))
     .width(Length::Fill)
     .height(Length::Fill)

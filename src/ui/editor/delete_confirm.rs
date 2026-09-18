@@ -27,6 +27,7 @@ pub(crate) fn open_delete_dialog(
     target: DeleteTarget,
     id: String,
 ) -> Task<Message> {
+    w.shell.rail_context_target = None;
     if let Some(existing) = w.editor.delete_confirm_window_id {
         return window::gain_focus(existing);
     }

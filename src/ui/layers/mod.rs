@@ -4,17 +4,22 @@ use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message as RootMessage;
 use iced::{Point, Task};
 
-/// Messages owned by the Layers editor feature (see `AGENTS.md`).
+/// Messages owned by the Layers editor feature.
 #[derive(Debug, Clone)]
 pub enum Message {
     AddTextLayer,
     AddShapeLayer(ShapeType),
     SelectLayer(Option<usize>),
     DeleteSelectedLayer,
+    DeleteLayer(usize),
     MoveSelectedLayerUp,
+    MoveLayerUp(usize),
     MoveSelectedLayerDown,
+    MoveLayerDown(usize),
     ToggleSelectedLayerVisibility,
+    ToggleLayerVisibility(usize),
     ToggleSelectedLayerLock,
+    ToggleLayerLock(usize),
     SelectedLayerOpacityChanged(f32),
     SelectedLayerTextChanged(String),
     SelectedLayerFontSizeChanged(String),
@@ -51,10 +56,15 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::AddShapeLayer(s) => add_shape_layer(w, s),
         Message::SelectLayer(i) => select_layer(w, i),
         Message::DeleteSelectedLayer => delete_selected_layer(w),
+        Message::DeleteLayer(idx) => delete_layer(w, idx),
         Message::MoveSelectedLayerUp => move_selected_layer_up(w),
+        Message::MoveLayerUp(idx) => move_layer_up(w, idx),
         Message::MoveSelectedLayerDown => move_selected_layer_down(w),
+        Message::MoveLayerDown(idx) => move_layer_down(w, idx),
         Message::ToggleSelectedLayerVisibility => toggle_selected_layer_visibility(w),
+        Message::ToggleLayerVisibility(idx) => toggle_layer_visibility(w, idx),
         Message::ToggleSelectedLayerLock => toggle_selected_layer_lock(w),
+        Message::ToggleLayerLock(idx) => toggle_layer_lock(w, idx),
         Message::SelectedLayerOpacityChanged(v) => selected_layer_opacity_changed(w, v),
         Message::SelectedLayerTextChanged(t) => selected_layer_text_changed(w, t),
         Message::SelectedLayerFontSizeChanged(s) => selected_layer_font_size_changed(w, s),
@@ -142,6 +152,13 @@ pub(crate) fn select_layer(w: &mut MainWindow, idx: Option<usize>) -> Task<RootM
     }
     w.layer.selected_index = valid_idx;
     w.load_layer_for_editing();
+    if let Some(i) = valid_idx
+        && let Some(slide) = w.get_current_slide()
+        && let Some(layer) = slide.layers.get(i)
+        && matches!(layer.content, ObjectContent::Text { .. })
+    {
+        w.shell.inspector_tab = crate::ui::messages::InspectorTab::Text;
+    }
     Task::none()
 }
 
@@ -149,6 +166,10 @@ pub(crate) fn delete_selected_layer(w: &mut MainWindow) -> Task<RootMessage> {
     let Some(idx) = w.layer.selected_index else {
         return Task::none();
     };
+    delete_layer(w, idx)
+}
+
+pub(crate) fn delete_layer(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
     w.push_undo();
     if let Some(slide) = w.get_current_slide_mut()
         && idx < slide.layers.len()
@@ -170,6 +191,10 @@ pub(crate) fn move_selected_layer_up(w: &mut MainWindow) -> Task<RootMessage> {
     let Some(idx) = w.layer.selected_index else {
         return Task::none();
     };
+    move_layer_up(w, idx)
+}
+
+pub(crate) fn move_layer_up(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
     w.push_undo();
     if let Some(slide) = w.get_current_slide_mut()
         && idx + 1 < slide.layers.len()
@@ -187,11 +212,17 @@ pub(crate) fn move_selected_layer_down(w: &mut MainWindow) -> Task<RootMessage> 
     let Some(idx) = w.layer.selected_index else {
         return Task::none();
     };
+    move_layer_down(w, idx)
+}
+
+pub(crate) fn move_layer_down(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
     if idx == 0 {
         return Task::none();
     }
     w.push_undo();
-    if let Some(slide) = w.get_current_slide_mut() {
+    if let Some(slide) = w.get_current_slide_mut()
+        && idx < slide.layers.len()
+    {
         slide.layers[idx].z_order -= 1;
         slide.layers[idx - 1].z_order += 1;
         slide.layers.swap(idx, idx - 1);
@@ -209,11 +240,31 @@ pub(crate) fn toggle_selected_layer_visibility(w: &mut MainWindow) -> Task<RootM
     Task::none()
 }
 
+pub(crate) fn toggle_layer_visibility(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    if let Some(slide) = w.get_current_slide_mut()
+        && let Some(layer) = slide.layers.get_mut(idx)
+    {
+        layer.visible = !layer.visible;
+        save_current_slide(w);
+    }
+    Task::none()
+}
+
 pub(crate) fn toggle_selected_layer_lock(w: &mut MainWindow) -> Task<RootMessage> {
     if let Some(layer) = selected_layer_mut(w) {
         layer.locked = !layer.locked;
     }
     save_current_slide(w);
+    Task::none()
+}
+
+pub(crate) fn toggle_layer_lock(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
+    if let Some(slide) = w.get_current_slide_mut()
+        && let Some(layer) = slide.layers.get_mut(idx)
+    {
+        layer.locked = !layer.locked;
+        save_current_slide(w);
+    }
     Task::none()
 }
 
@@ -227,6 +278,7 @@ pub(crate) fn selected_layer_opacity_changed(w: &mut MainWindow, v: f32) -> Task
 
 pub(crate) fn selected_layer_text_changed(w: &mut MainWindow, text: String) -> Task<RootMessage> {
     w.layer.text = text.clone();
+    w.editor.editing_slide_text = text.clone();
     if let Some(layer) = selected_layer_mut(w)
         && let ObjectContent::Text {
             text: ref mut t, ..

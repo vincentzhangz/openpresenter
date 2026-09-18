@@ -108,7 +108,41 @@ impl MainWindow {
         window.load_songs();
         window.load_service_plans();
         window.load_bible_translations();
+        window.load_themes();
+        window.load_lib_assets();
+        window.load_props();
         (window, Task::none())
+    }
+
+    pub(crate) fn props_path(&self) -> std::path::PathBuf {
+        self.app_config
+            .db_path
+            .parent()
+            .map(|p| p.join("props.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("props.json"))
+    }
+
+    pub(crate) fn load_props(&mut self) {
+        let path = self.props_path();
+        if path.exists() {
+            self.props.manager = crate::domain::PropManager::load_from_file(&path);
+        }
+        if self.props.manager.looks.is_empty() {
+            let default_look = crate::domain::Look::with_default_screens("Default");
+            let active_id = default_look.id.clone();
+            self.props.manager.looks = vec![
+                default_look,
+                crate::domain::Look::with_default_screens("Broadcast / Lower Third"),
+            ];
+            self.props.manager.active_look_id = Some(active_id);
+        }
+    }
+
+    pub(crate) fn save_props(&mut self) {
+        let path = self.props_path();
+        if let Err(e) = self.props.manager.save_to_file(&path) {
+            self.set_error(format!("Failed to save props: {e}"));
+        }
     }
 
     pub(crate) fn load_presentations(&mut self) {
@@ -188,39 +222,47 @@ impl MainWindow {
     }
 
     pub(crate) fn load_slide_for_editing(&mut self) {
-        let (text, font_size, transition_dur, group, notes) =
-            if let Some(slide) = self.get_current_slide() {
-                let dur = match slide.transition {
-                    Transition::Cut => String::from("500"),
-                    Transition::Fade { duration_ms }
-                    | Transition::Dissolve { duration_ms }
-                    | Transition::Slide { duration_ms }
-                    | Transition::Push { duration_ms, .. }
-                    | Transition::Zoom { duration_ms }
-                    | Transition::Flip { duration_ms }
-                    | Transition::Clock { duration_ms }
-                    | Transition::Wipe { duration_ms, .. } => duration_ms.to_string(),
-                };
-                let group = slide.group.clone().unwrap_or_default();
-                let notes = slide.notes.clone().unwrap_or_default();
-                if let crate::domain::SlideContent::Text {
-                    ref text,
-                    ref style,
-                } = slide.content
-                {
-                    (text.clone(), style.font_size, dur, group, notes)
-                } else {
-                    (String::new(), 72.0, dur, group, notes)
-                }
-            } else {
-                (
-                    String::new(),
-                    72.0,
-                    String::from("500"),
-                    String::new(),
-                    String::new(),
-                )
+        let (text, font_size, transition_dur, group, notes) = if let Some(slide) =
+            self.get_current_slide()
+        {
+            let dur = match slide.transition {
+                Transition::Cut => String::from("500"),
+                Transition::Fade { duration_ms }
+                | Transition::Dissolve { duration_ms }
+                | Transition::Slide { duration_ms }
+                | Transition::Push { duration_ms, .. }
+                | Transition::Zoom { duration_ms }
+                | Transition::Flip { duration_ms }
+                | Transition::Clock { duration_ms }
+                | Transition::Wipe { duration_ms, .. } => duration_ms.to_string(),
             };
+            let group = slide.group.clone().unwrap_or_default();
+            let notes = slide.notes.clone().unwrap_or_default();
+            if let crate::domain::SlideContent::Text {
+                ref text,
+                ref style,
+            } = slide.content
+            {
+                (text.clone(), style.font_size, dur, group, notes)
+            } else if let Some((txt, style)) = slide.layers.iter().find_map(|l| match &l.content {
+                crate::domain::ObjectContent::Text { text, style, .. } => {
+                    Some((text.clone(), style))
+                }
+                _ => None,
+            }) {
+                (txt, style.font_size, dur, group, notes)
+            } else {
+                (String::new(), 72.0, dur, group, notes)
+            }
+        } else {
+            (
+                String::new(),
+                72.0,
+                String::from("500"),
+                String::new(),
+                String::new(),
+            )
+        };
         self.editor.editing_slide_text = text;
         self.editor.editing_slide_font_size = font_size.to_string();
         self.editor.editing_transition_duration = transition_dur;
@@ -306,8 +348,10 @@ impl MainWindow {
             ))
         });
         if let Some((text, font_size, px, py, w, h, sw, ff, lh, ls, gr, tsw)) = data {
-            self.layer.text = text;
-            self.layer.font_size = font_size;
+            self.layer.text = text.clone();
+            self.layer.font_size = font_size.clone();
+            self.editor.editing_slide_text = text;
+            self.editor.editing_slide_font_size = font_size;
             self.layer.pos_x = format!("{px:.3}");
             self.layer.pos_y = format!("{py:.3}");
             self.layer.width = format!("{w:.3}");
@@ -346,6 +390,21 @@ impl MainWindow {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Noop => Task::none(),
+            Message::EscapePressed => {
+                if self.output.settings_open {
+                    self.output.settings_open = false;
+                    self.output.settings_status_message = None;
+                    Task::none()
+                } else if self.output.matrix_open {
+                    self.output.matrix_open = false;
+                    Task::none()
+                } else {
+                    crate::ui::slides::update(
+                        self,
+                        crate::ui::slides::Message::EndInlineTextEditing,
+                    )
+                }
+            }
             Message::DismissError => {
                 self.ui.error_message = None;
                 Task::none()
@@ -358,11 +417,14 @@ impl MainWindow {
             Message::SwitchInspectorTab(tab) => {
                 crate::ui::navigation::switch_inspector_tab(self, tab)
             }
+            Message::OpenTheme => crate::ui::navigation::open_theme(self),
+            Message::OpenTextEditor => crate::ui::navigation::open_text_editor(self),
             Message::FocusSearch => {
                 self.shell.sidebar_tab = SidebarTab::Presentations;
                 crate::ui::polish::focus_search(self)
             }
             Message::SelectLeftSection(tab) => {
+                self.shell.rail_context_target = None;
                 self.shell.sidebar_tab = tab;
                 Task::none()
             }
@@ -407,6 +469,7 @@ impl MainWindow {
             }
             Message::SelectPresentation(_) => Task::none(),
             Message::OpenPresentation(id) => {
+                self.shell.rail_context_target = None;
                 self.presenting.slide_context_index = None;
                 self.presenting.group_submenu = false;
                 crate::ui::presentations::open(self, id)
@@ -416,6 +479,7 @@ impl MainWindow {
                 crate::ui::presentations::rename_changed(self, name)
             }
             Message::DeletePresentationClicked(id) => {
+                self.shell.rail_context_target = None;
                 crate::ui::presentations::delete_clicked(self, id)
             }
             Message::ConfirmDeletePresentation => crate::ui::presentations::confirm_delete(self),
@@ -428,16 +492,43 @@ impl MainWindow {
             Message::PresentingSelectSlide(i) => {
                 self.presenting.slide_context_index = None;
                 self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.slide_layer_active = true;
+                self.presenting.media_layer_active = true;
+                self.output.black_screen = false;
                 crate::ui::presenter::select_slide(self, i)
+            }
+            Message::PresentingSelectLastSlide => {
+                self.presenting.slide_context_index = None;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.slide_layer_active = true;
+                self.presenting.media_layer_active = true;
+                self.output.black_screen = false;
+                let last = self
+                    .presenting
+                    .presentation
+                    .as_ref()
+                    .map(|p| p.slides.len().saturating_sub(1))
+                    .unwrap_or(0);
+                crate::ui::presenter::select_slide(self, last)
             }
             Message::PresentingNextSlide => {
                 self.presenting.slide_context_index = None;
                 self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.slide_layer_active = true;
+                self.presenting.media_layer_active = true;
+                self.output.black_screen = false;
                 crate::ui::presenter::next_slide(self)
             }
             Message::PresentingPrevSlide => {
                 self.presenting.slide_context_index = None;
                 self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.slide_layer_active = true;
+                self.presenting.media_layer_active = true;
+                self.output.black_screen = false;
                 crate::ui::presenter::prev_slide(self)
             }
             Message::ShowSlidesCursorMoved(p) => {
@@ -449,30 +540,335 @@ impl MainWindow {
             Message::ShowSlideContextMenu(i) => {
                 self.presenting.slide_context_index = Some(i);
                 self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
                 if self.presenting.slide_context_pos.is_none() {
                     self.presenting.slide_context_pos = Some(iced::Point::new(24.0, 24.0));
                 }
                 Task::none()
             }
             Message::ShowSlideGroupSubmenu => {
-                self.presenting.group_submenu = true;
+                self.presenting.group_submenu = !self.presenting.group_submenu;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
+                Task::none()
+            }
+            Message::ShowSlideCueSubmenu => {
+                self.presenting.cue_submenu = !self.presenting.cue_submenu;
+                self.presenting.group_submenu = false;
+                self.presenting.transition_submenu = false;
+                Task::none()
+            }
+            Message::ShowSlideTransitionSubmenu => {
+                self.presenting.transition_submenu = !self.presenting.transition_submenu;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
                 Task::none()
             }
             Message::HideSlideContextMenu => {
                 self.presenting.slide_context_index = None;
                 self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
+                Task::none()
+            }
+            Message::ShowRailContextMenu(target) => {
+                self.shell.rail_context_target = Some(target);
+                if self.shell.rail_cursor_pos.is_none() {
+                    self.shell.rail_cursor_pos = Some(iced::Point::new(40.0, 100.0));
+                }
+                Task::none()
+            }
+            Message::HideRailContextMenu => {
+                self.shell.rail_context_target = None;
+                Task::none()
+            }
+            Message::RailCursorMoved(p) => {
+                if self.shell.rail_context_target.is_none() {
+                    self.shell.rail_cursor_pos = Some(p);
+                }
+                Task::none()
+            }
+            Message::DuplicatePresentation(id) => {
+                self.shell.rail_context_target = None;
+                match self.services.presentations.duplicate_presentation(&id) {
+                    Ok(pres) => {
+                        self.load_presentations();
+                        self.editor.editing = Some(pres.clone());
+                        if self.shell.current_mode == crate::ui::messages::ViewMode::Show {
+                            self.presenting.presentation = Some(pres);
+                            self.presenting.slide_index = 0;
+                            let _ = crate::ui::presenter::activate_slide(self, 0, false);
+                        }
+                    }
+                    Err(e) => self.set_error(format!("Failed to duplicate presentation: {e}")),
+                }
+                Task::none()
+            }
+            Message::EditPresentation(id) => {
+                self.shell.rail_context_target = None;
+                self.shell.current_mode = crate::ui::messages::ViewMode::Edit;
+                crate::ui::presentations::open(self, id)
+            }
+            Message::ExportPresentation(id) => {
+                self.shell.rail_context_target = None;
+                crate::ui::import_export::export_presentation_by_id(self, &id)
+            }
+            Message::SongToPresentation(id) => {
+                self.shell.rail_context_target = None;
+                let _ = crate::ui::songs::open_song(self, id);
+                crate::ui::songs::song_to_presentation(self)
+            }
+            Message::AddSlideCue(idx, cue) => {
+                self.presenting.slide_context_index = None;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
+                if let Some(ref mut pres) = self.presenting.presentation
+                    && let Some(slide) = pres.slides.get_mut(idx)
+                {
+                    slide.cues.push(cue);
+                    let updated = slide.clone();
+                    let pres_id = pres.id.clone();
+                    let _ = self.services.presentations.update_slide(&pres_id, &updated);
+                }
+                Task::none()
+            }
+            Message::ClearSlideCues(idx) => {
+                self.presenting.slide_context_index = None;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
+                if let Some(ref mut pres) = self.presenting.presentation
+                    && let Some(slide) = pres.slides.get_mut(idx)
+                {
+                    slide.cues.clear();
+                    let updated = slide.clone();
+                    let pres_id = pres.id.clone();
+                    let _ = self.services.presentations.update_slide(&pres_id, &updated);
+                }
+                Task::none()
+            }
+            Message::SetSlideTransition(idx, trans) => {
+                self.presenting.slide_context_index = None;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                self.presenting.transition_submenu = false;
+                if let Some(ref mut pres) = self.presenting.presentation
+                    && let Some(slide) = pres.slides.get_mut(idx)
+                {
+                    slide.transition = trans;
+                    let updated = slide.clone();
+                    let pres_id = pres.id.clone();
+                    let _ = self.services.presentations.update_slide(&pres_id, &updated);
+                }
+                Task::none()
+            }
+            Message::EditSlide(idx) => {
+                self.presenting.slide_context_index = None;
+                self.presenting.group_submenu = false;
+                self.presenting.cue_submenu = false;
+                if let Some(ref pres) = self.presenting.presentation {
+                    self.editor.editing = Some(pres.clone());
+                    self.editor.selected_slide_index = Some(idx);
+                    self.shell.current_mode = ViewMode::Edit;
+                    self.load_slide_for_editing();
+                }
+                Task::none()
+            }
+            Message::SetSlideGridCols(cols) => {
+                self.presenting.slide_grid_cols = cols.clamp(2, 6);
+                Task::none()
+            }
+            Message::SetSlideViewMode(mode) => {
+                self.presenting.slide_view_mode = mode;
+                Task::none()
+            }
+            Message::JumpToGroup(group_prefix) => {
+                if let Some(ref pres) = self.presenting.presentation {
+                    let pfx = group_prefix.to_lowercase();
+                    let cur = self.presenting.slide_index;
+                    let next_match = pres
+                        .slides
+                        .iter()
+                        .enumerate()
+                        .skip(cur + 1)
+                        .find(|(_, s)| {
+                            s.group
+                                .as_deref()
+                                .map(|g| g.to_lowercase().starts_with(&pfx))
+                                .unwrap_or(false)
+                        })
+                        .or_else(|| {
+                            pres.slides.iter().enumerate().find(|(_, s)| {
+                                s.group
+                                    .as_deref()
+                                    .map(|g| g.to_lowercase().starts_with(&pfx))
+                                    .unwrap_or(false)
+                            })
+                        });
+                    if let Some((idx, _)) = next_match {
+                        return self.update(Message::PresentingSelectSlide(idx));
+                    } else if pfx == "chorus" {
+                        return self.update(Message::ClearSlide);
+                    }
+                }
+                Task::none()
+            }
+            Message::SetGlobalTransition(t) => {
+                self.presenting.global_transition = t;
                 Task::none()
             }
             Message::AnimationTick => crate::ui::presenter::animation_tick(self),
             Message::ToggleNdi => crate::ui::output::toggle_ndi(self),
             Message::NdiSendCurrent => crate::ui::output::ndi_send_current(self),
             Message::NdiBlackScreen => crate::ui::output::ndi_black_screen(self),
-            Message::ClearOutput => crate::ui::output::ndi_black_screen(self),
+            Message::ClearOutput => {
+                self.output.black_screen = true;
+                self.presenting.slide_layer_active = false;
+                self.presenting.media_layer_active = false;
+                for p in &mut self.props.manager.props {
+                    p.visible = false;
+                }
+                self.props.manager.clear_message();
+                crate::ui::output::ndi_black_screen(self)
+            }
+            Message::ClearAll => {
+                self.output.black_screen = false;
+                self.presenting.slide_layer_active = false;
+                self.presenting.media_layer_active = false;
+                for p in &mut self.props.manager.props {
+                    p.visible = false;
+                }
+                self.props.manager.clear_message();
+                crate::ui::audio::stop(self)
+            }
+            Message::ClearSlide => {
+                self.presenting.slide_layer_active = false;
+                crate::ui::output::ndi_send_current(self)
+            }
+            Message::ClearMedia => {
+                self.presenting.media_layer_active = false;
+                crate::ui::output::ndi_send_current(self)
+            }
+            Message::ClearProps => {
+                for p in &mut self.props.manager.props {
+                    p.visible = false;
+                }
+                crate::ui::output::ndi_send_current(self)
+            }
+            Message::ClearMessages => {
+                self.props.manager.clear_message();
+                crate::ui::output::ndi_send_current(self)
+            }
+            Message::ClearAudio => crate::ui::audio::stop(self),
+            Message::SelectPreviewScreen(screen_id) => {
+                self.presenting.preview_screen_target = screen_id;
+                Task::none()
+            }
+            Message::ToggleLooksMatrixModal => {
+                self.output.matrix_open = !self.output.matrix_open;
+                Task::none()
+            }
+            Message::SelectLook(id) => {
+                self.props.manager.active_look_id = Some(id.clone());
+                self.output.selected_look_id = Some(id);
+                self.save_props();
+                Task::none()
+            }
+            Message::CreateLook(name) => {
+                let look = crate::domain::Look::with_default_screens(name);
+                let id = look.id.clone();
+                self.props.manager.add_look(look);
+                self.props.manager.active_look_id = Some(id.clone());
+                self.output.selected_look_id = Some(id);
+                self.output.editing_look_name.clear();
+                self.save_props();
+                Task::none()
+            }
+            Message::LookNameInputChanged(val) => {
+                self.output.editing_look_name = val;
+                Task::none()
+            }
+            Message::DeleteLook(id) => {
+                self.props.manager.looks.retain(|l| l.id != id);
+                if self.props.manager.active_look_id.as_deref() == Some(&id) {
+                    self.props.manager.active_look_id =
+                        self.props.manager.looks.first().map(|l| l.id.clone());
+                }
+                if self.output.selected_look_id.as_deref() == Some(&id) {
+                    self.output.selected_look_id = self.props.manager.active_look_id.clone();
+                }
+                self.save_props();
+                Task::none()
+            }
+            Message::ToggleLookScreenLayer(look_id, screen_id, layer_type) => {
+                if let Some(look) = self
+                    .props
+                    .manager
+                    .looks
+                    .iter_mut()
+                    .find(|l| l.id == look_id)
+                {
+                    let mut target = look.target_or_default(&screen_id);
+                    match layer_type {
+                        crate::ui::messages::LookLayerType::Media => {
+                            target.media_enabled = !target.media_enabled
+                        }
+                        crate::ui::messages::LookLayerType::Slide => {
+                            target.slide_enabled = !target.slide_enabled
+                        }
+                        crate::ui::messages::LookLayerType::Props => {
+                            target.props_enabled = !target.props_enabled
+                        }
+                        crate::ui::messages::LookLayerType::Messages => {
+                            target.messages_enabled = !target.messages_enabled
+                        }
+                        crate::ui::messages::LookLayerType::Mask => {
+                            target.mask_enabled = !target.mask_enabled
+                        }
+                    }
+                    look.set_screen_target(target);
+                    self.save_props();
+                }
+                Task::none()
+            }
+            Message::SetLookScreenTheme(look_id, screen_id, theme_id) => {
+                if let Some(look) = self
+                    .props
+                    .manager
+                    .looks
+                    .iter_mut()
+                    .find(|l| l.id == look_id)
+                {
+                    let mut target = look.target_or_default(&screen_id);
+                    target.theme_id = theme_id;
+                    look.set_screen_target(target);
+                    self.save_props();
+                }
+                Task::none()
+            }
+            Message::SendLiveMessage(text) => {
+                let trimmed = text.trim().to_string();
+                if !trimmed.is_empty() {
+                    self.props.manager.set_message(trimmed);
+                    self.output.message_input.clear();
+                }
+                Task::none()
+            }
+            Message::DismissLiveMessage => {
+                self.props.manager.clear_message();
+                Task::none()
+            }
+            Message::LiveMessageInputChanged(val) => {
+                self.output.message_input = val;
+                Task::none()
+            }
             Message::Ndi(msg) => crate::ui::ndi::update(self, msg),
-            Message::ToggleStageDisplay => crate::ui::output::toggle_stage_display(self),
-            Message::ClockTick => crate::ui::output::clock_tick(self),
+            Message::ToggleStageDisplay => crate::ui::stage::toggle_stage_display(self),
+            Message::ClockTick => crate::ui::stage::clock_tick(self),
             Message::Stage(msg) => crate::ui::stage::update(self, msg),
-            Message::SwitchSidebarTab(tab) => crate::ui::output::switch_sidebar_tab(self, tab),
+            Message::SwitchSidebarTab(tab) => crate::ui::navigation::switch_sidebar_tab(self, tab),
             Message::Library(msg) => crate::ui::library::update(self, msg),
             Message::Themes(msg) => crate::ui::themes::update(self, msg),
             Message::ToggleShortcutsOverlay => crate::ui::polish::toggle_shortcuts_overlay(self),
@@ -484,6 +880,13 @@ impl MainWindow {
             Message::Playlist(msg) => crate::ui::playlist::update(self, msg),
             Message::OpenOutputWindow => crate::ui::output::open_output_window(self),
             Message::CloseOutputWindow => crate::ui::output::close_output_window(self),
+            Message::ToggleOutputWindow => {
+                if self.output.window_id.is_some() {
+                    crate::ui::output::close_output_window(self)
+                } else {
+                    crate::ui::output::open_output_window(self)
+                }
+            }
             Message::OutputWindowOpened => Task::none(),
             Message::ToggleOutputBlackScreen => crate::ui::output::toggle_output_black_screen(self),
             Message::WindowClosed(id) => crate::ui::output::window_closed(self, id),
@@ -528,6 +931,46 @@ impl MainWindow {
         }
     }
 
+    pub fn composite_layers_for_screen(
+        &self,
+        screen_id: &str,
+    ) -> crate::ui::presenter::canvas::CompositeLayers {
+        let active_look = self.props.manager.current_look();
+        let target = active_look
+            .map(|l| l.target_or_default(screen_id))
+            .unwrap_or_else(|| crate::domain::ScreenLookTarget::default_for_screen(screen_id));
+
+        let theme_override = target
+            .theme_id
+            .as_ref()
+            .and_then(|tid| self.theme_state.list.iter().find(|t| &t.id == tid).cloned());
+
+        let mask = if target.mask_enabled {
+            active_look
+                .map(|l| l.mask.clone())
+                .unwrap_or(crate::domain::Mask::None)
+        } else {
+            crate::domain::Mask::None
+        };
+
+        crate::ui::presenter::canvas::CompositeLayers {
+            media_enabled: target.media_enabled && self.presenting.media_layer_active,
+            slide_enabled: target.slide_enabled && self.presenting.slide_layer_active,
+            props_enabled: target.props_enabled,
+            messages_enabled: target.messages_enabled,
+            mask_enabled: target.mask_enabled,
+            props: self.props.manager.props.clone(),
+            live_message: self
+                .props
+                .manager
+                .live_message
+                .as_ref()
+                .map(|m| m.text.clone()),
+            mask,
+            theme_override,
+        }
+    }
+
     pub fn view_for_window(&self, id: window::Id) -> Element<'_, Message> {
         if Some(id) == self.output.window_id {
             let current = self
@@ -539,6 +982,7 @@ impl MainWindow {
                 Some(ts) => (Some(&ts.from_slide), ts.transition, ts.progress),
                 None => (None, Transition::Cut, 1.0),
             };
+            let layers = self.composite_layers_for_screen("main");
             output_window::view(
                 current,
                 from_slide,
@@ -546,6 +990,7 @@ impl MainWindow {
                 progress,
                 self.video.frame.as_ref(),
                 self.output.black_screen,
+                &layers,
             )
         } else if Some(id) == self.editor.delete_confirm_window_id {
             self.delete_confirm_view()
@@ -709,10 +1154,20 @@ impl MainWindow {
             shortcut("Cmd+Z / Ctrl+Z", "Undo"),
             shortcut("Cmd+Shift+Z / Ctrl+Y", "Redo"),
             Space::new().height(10),
-            text("PRESENTER").size(10).color(theme::TEXT_MUTED),
+            text("PRESENTER (SHOW MODE)")
+                .size(10)
+                .color(theme::TEXT_MUTED),
             Space::new().height(4),
-            shortcut("Right / Space", "Next slide"),
-            shortcut("Left", "Previous slide"),
+            shortcut("Right / Space / PgDn / Down", "Next slide"),
+            shortcut("Left / PgUp / Up", "Previous slide"),
+            shortcut("Home / End", "First / Last slide"),
+            shortcut("F1", "Clear All"),
+            shortcut("F2 / C", "Clear Slide"),
+            shortcut("F3", "Clear Media"),
+            shortcut("F4", "Clear Props"),
+            shortcut("F5", "Clear Audio"),
+            shortcut("F6", "Clear Messages"),
+            shortcut("B", "Toggle Black Screen"),
             shortcut("Escape", "Return to library"),
             Space::new().height(20),
             button(text("Close").size(13))
@@ -735,16 +1190,86 @@ impl MainWindow {
             && self.presenting.presentation.is_some()
         {
             event::listen_with(|ev, _status, _id| {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = ev {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) = ev
+                {
                     return match key {
                         keyboard::Key::Named(key::Named::ArrowRight)
+                        | keyboard::Key::Named(key::Named::ArrowDown)
+                        | keyboard::Key::Named(key::Named::PageDown)
                         | keyboard::Key::Named(key::Named::Space) => {
                             Some(Message::PresentingNextSlide)
                         }
-                        keyboard::Key::Named(key::Named::ArrowLeft) => {
+                        keyboard::Key::Named(key::Named::ArrowLeft)
+                        | keyboard::Key::Named(key::Named::ArrowUp)
+                        | keyboard::Key::Named(key::Named::PageUp) => {
                             Some(Message::PresentingPrevSlide)
                         }
-                        keyboard::Key::Named(key::Named::Escape) => Some(Message::BackToList),
+                        keyboard::Key::Named(key::Named::Home) => {
+                            Some(Message::PresentingSelectSlide(0))
+                        }
+                        keyboard::Key::Named(key::Named::End) => {
+                            Some(Message::PresentingSelectLastSlide)
+                        }
+                        keyboard::Key::Named(key::Named::F1) => Some(Message::ClearAll),
+                        keyboard::Key::Named(key::Named::F2) => Some(Message::ClearSlide),
+                        keyboard::Key::Named(key::Named::F3) => Some(Message::ClearMedia),
+                        keyboard::Key::Named(key::Named::F4) => Some(Message::ClearProps),
+                        keyboard::Key::Named(key::Named::F5) => Some(Message::ClearAudio),
+                        keyboard::Key::Named(key::Named::F6) => Some(Message::ClearMessages),
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "1" => {
+                            Some(Message::ClearAll)
+                        }
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "2" => {
+                            Some(Message::ClearSlide)
+                        }
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "3" => {
+                            Some(Message::ClearMedia)
+                        }
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "4" => {
+                            Some(Message::ClearProps)
+                        }
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "5" => {
+                            Some(Message::ClearAudio)
+                        }
+                        keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "6" => {
+                            Some(Message::ClearMessages)
+                        }
+                        keyboard::Key::Character(c)
+                            if (c.as_str() == "b" || c.as_str() == "B")
+                                && !modifiers.command()
+                                && !modifiers.control() =>
+                        {
+                            Some(Message::ToggleOutputBlackScreen)
+                        }
+                        keyboard::Key::Character(c)
+                            if (c.as_str() == "v" || c.as_str() == "V")
+                                && !modifiers.command()
+                                && !modifiers.control() =>
+                        {
+                            Some(Message::JumpToGroup("Verse".to_string()))
+                        }
+                        keyboard::Key::Character(c)
+                            if (c.as_str() == "c" || c.as_str() == "C")
+                                && !modifiers.command()
+                                && !modifiers.control() =>
+                        {
+                            Some(Message::JumpToGroup("Chorus".to_string()))
+                        }
+                        keyboard::Key::Character(c)
+                            if !modifiers.command()
+                                && !modifiers.control()
+                                && c.as_str().len() == 1
+                                && c.as_str().chars().all(|ch| ch.is_ascii_digit()) =>
+                        {
+                            let n: usize = c.as_str().parse().unwrap_or(0);
+                            if n >= 1 {
+                                Some(Message::PresentingSelectSlide(n - 1))
+                            } else {
+                                None
+                            }
+                        }
                         _ => None,
                     };
                 }
@@ -778,6 +1303,11 @@ impl MainWindow {
                     Some(Message::ToggleShortcutsOverlay)
                 }
                 keyboard::Key::Character(c)
+                    if (c.as_str() == "," || c.as_str() == "<") && modifiers.command() =>
+                {
+                    Some(Message::Output(crate::ui::output::Message::SettingsOpen))
+                }
+                keyboard::Key::Character(c)
                     if c.as_str() == "z" && modifiers.command() && modifiers.shift() =>
                 {
                     Some(Message::Redo)
@@ -788,6 +1318,7 @@ impl MainWindow {
                 keyboard::Key::Character(c) if c.as_str() == "y" && modifiers.command() => {
                     Some(Message::Redo)
                 }
+                keyboard::Key::Named(key::Named::Escape) => Some(Message::EscapePressed),
                 _ => None,
             }
         });

@@ -6,6 +6,116 @@ pub struct Config {
     pub db_path: PathBuf,
     pub ndi: NdiConfig,
     pub output: OutputConfig,
+    #[serde(default)]
+    pub general: GeneralConfig,
+    #[serde(default)]
+    pub triggers: TriggerConfig,
+    #[serde(default)]
+    pub transitions: TransitionConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GeneralConfig {
+    #[serde(default = "default_startup_mode")]
+    pub startup_mode: String,
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+}
+
+fn default_startup_mode() -> String {
+    "show".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            startup_mode: default_startup_mode(),
+            auto_reconnect: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TriggerConfig {
+    #[serde(default = "default_http_port")]
+    pub http_port: u16,
+    #[serde(default = "default_osc_port")]
+    pub osc_port: u16,
+    #[serde(default = "default_true")]
+    pub http_enabled: bool,
+    #[serde(default = "default_true")]
+    pub osc_enabled: bool,
+}
+
+fn default_http_port() -> u16 {
+    9090
+}
+
+fn default_osc_port() -> u16 {
+    9000
+}
+
+impl Default for TriggerConfig {
+    fn default() -> Self {
+        Self {
+            http_port: default_http_port(),
+            osc_port: default_osc_port(),
+            http_enabled: true,
+            osc_enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransitionConfig {
+    #[serde(default = "default_transition_type")]
+    pub default_type: String,
+    #[serde(default = "default_transition_duration")]
+    pub default_duration_ms: u64,
+}
+
+fn default_transition_type() -> String {
+    "fade".to_string()
+}
+
+fn default_transition_duration() -> u64 {
+    500
+}
+
+impl Default for TransitionConfig {
+    fn default() -> Self {
+        Self {
+            default_type: default_transition_type(),
+            default_duration_ms: default_transition_duration(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub reduce_motion: bool,
+    #[serde(default = "default_grid_cols")]
+    pub default_grid_cols: usize,
+}
+
+fn default_grid_cols() -> usize {
+    4
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            reduce_motion: false,
+            default_grid_cols: default_grid_cols(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +155,10 @@ impl Default for Config {
                 screen_y: 0.0,
                 auto_fullscreen: false,
             },
+            general: GeneralConfig::default(),
+            triggers: TriggerConfig::default(),
+            transitions: TransitionConfig::default(),
+            ui: UiConfig::default(),
         }
     }
 }
@@ -140,5 +254,9 @@ mod tests {
         assert_eq!(restored.output.width, original.output.width);
         assert_eq!(restored.output.height, original.output.height);
         assert_eq!(restored.ndi.source_name, original.ndi.source_name);
+        assert_eq!(restored.general.startup_mode, "show");
+        assert_eq!(restored.triggers.http_port, 9090);
+        assert_eq!(restored.transitions.default_duration_ms, 500);
+        assert_eq!(restored.ui.default_grid_cols, 4);
     }
 }

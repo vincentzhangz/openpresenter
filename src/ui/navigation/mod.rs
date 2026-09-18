@@ -23,6 +23,10 @@ pub(crate) fn switch_mode(w: &mut MainWindow, mode: ViewMode) -> Task<Message> {
             w.editor.editing = Some(pres.clone());
             w.editor.selected_slide_index = Some(w.presenting.slide_index);
             w.load_slide_for_editing();
+        } else if let Some(first) = w.editor.presentations.first().cloned() {
+            w.editor.editing = Some(first);
+            w.editor.selected_slide_index = Some(0);
+            w.load_slide_for_editing();
         }
     }
     Task::none()
@@ -34,6 +38,56 @@ pub(crate) fn switch_inspector_tab(w: &mut MainWindow, tab: InspectorTab) -> Tas
         w.load_themes();
     }
     Task::none()
+}
+
+pub(crate) fn open_theme(w: &mut MainWindow) -> Task<Message> {
+    if w.shell.current_mode != ViewMode::Edit {
+        let _ = switch_mode(w, ViewMode::Edit);
+    }
+    if w.editor.editing.is_none() {
+        if let Some(ref pres) = w.presenting.presentation {
+            w.editor.editing = Some(pres.clone());
+        } else if let Some(first) = w.editor.presentations.first().cloned() {
+            w.editor.editing = Some(first);
+        }
+    }
+    if let Some(ref pres) = w.editor.editing
+        && w.editor.selected_slide_index.is_none()
+        && !pres.slides.is_empty()
+    {
+        let idx = w
+            .presenting
+            .slide_index
+            .min(pres.slides.len().saturating_sub(1));
+        w.editor.selected_slide_index = Some(idx);
+        w.load_slide_for_editing();
+    }
+    switch_inspector_tab(w, InspectorTab::Theme)
+}
+
+pub(crate) fn open_text_editor(w: &mut MainWindow) -> Task<Message> {
+    if w.shell.current_mode != ViewMode::Edit {
+        let _ = switch_mode(w, ViewMode::Edit);
+    }
+    if w.editor.editing.is_none() {
+        if let Some(ref pres) = w.presenting.presentation {
+            w.editor.editing = Some(pres.clone());
+        } else if let Some(first) = w.editor.presentations.first().cloned() {
+            w.editor.editing = Some(first);
+        }
+    }
+    if let Some(ref pres) = w.editor.editing
+        && w.editor.selected_slide_index.is_none()
+        && !pres.slides.is_empty()
+    {
+        let idx = w
+            .presenting
+            .slide_index
+            .min(pres.slides.len().saturating_sub(1));
+        w.editor.selected_slide_index = Some(idx);
+        w.load_slide_for_editing();
+    }
+    switch_inspector_tab(w, InspectorTab::Text)
 }
 
 pub(crate) fn back_to_list(w: &mut MainWindow) -> Task<Message> {
@@ -98,5 +152,16 @@ pub(crate) fn cancel_new_presentation(w: &mut MainWindow) -> Task<Message> {
 
 pub(crate) fn new_presentation_name_changed(w: &mut MainWindow, name: String) -> Task<Message> {
     w.editor.new_presentation_name = name;
+    Task::none()
+}
+
+pub(crate) fn switch_sidebar_tab(
+    w: &mut MainWindow,
+    tab: crate::ui::messages::SidebarTab,
+) -> Task<Message> {
+    w.shell.sidebar_tab = tab;
+    if tab == crate::ui::messages::SidebarTab::Library && w.library.assets.is_empty() {
+        w.load_lib_assets();
+    }
     Task::none()
 }

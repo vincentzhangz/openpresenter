@@ -27,7 +27,7 @@ pub fn group_color(label: &str) -> Color {
     Color::from_rgb8(r, g, b)
 }
 
-/// Semantic, ProPresenter-style palette that maps a slide group label to a colour.
+/// Semantic palette that maps a slide group label to a colour.
 ///
 /// Unlike [`group_color`] (which is hash-based), this assigns meaningful colours:
 /// verses are blue, choruses pink, bridges purple, tags red, etc. Used for the

@@ -2,7 +2,7 @@ use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message as RootMessage;
 use iced::Task;
 
-/// Messages owned by the Import/Export feature module (see `AGENTS.md`).
+/// Messages owned by the Import/Export feature module.
 ///
 /// `ToggleImportExportPanel` stays as a root variant (global panel visibility
 /// toggle, consistent with the other `*Panel` toggles).
@@ -35,6 +35,30 @@ pub(crate) fn export_opp(w: &mut MainWindow) -> Task<RootMessage> {
     let pres = match w.editor.editing.clone() {
         Some(p) => p,
         None => return Task::none(),
+    };
+
+    let dest = rfd::FileDialog::new()
+        .set_title("Export Presentation Package")
+        .add_filter("OpenPresenter Package", &["opp"])
+        .set_file_name(format!("{}.opp", pres.name))
+        .save_file();
+
+    if let Some(path) = dest {
+        match crate::import::opp::export(&pres, &path) {
+            Ok(n) => println!("[export .opp] wrote {n} media files to {}", path.display()),
+            Err(e) => w.set_error(format!("[export .opp] error: {e}")),
+        }
+    }
+    Task::none()
+}
+
+pub(crate) fn export_presentation_by_id(w: &mut MainWindow, id: &str) -> Task<RootMessage> {
+    let pres = match w.services.presentations.get(id) {
+        Ok(p) => p,
+        Err(e) => {
+            w.set_error(format!("Failed to load presentation for export: {e}"));
+            return Task::none();
+        }
     };
 
     let dest = rfd::FileDialog::new()

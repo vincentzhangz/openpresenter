@@ -3,7 +3,7 @@ use iced::{
     widget::{button, container},
 };
 
-// ProPresenter-style charcoal palette.
+// Dark charcoal palette.
 pub const BG_DARKEST: Color = Color::from_rgb(0.094, 0.094, 0.094); // ~#181818
 pub const BG_DARK: Color = Color::from_rgb(0.118, 0.118, 0.118); // ~#1e1e1e
 pub const BG_PANEL: Color = Color::from_rgb(0.137, 0.137, 0.137); // ~#232323
@@ -14,7 +14,7 @@ pub const BG_ACTIVE: Color = Color::from_rgb(0.235, 0.235, 0.235);
 pub const BORDER_PANEL: Color = Color::from_rgb(0.180, 0.180, 0.180);
 pub const BORDER_STRONG: Color = Color::from_rgb(0.110, 0.110, 0.110); // hairline separators
 
-// ProPresenter selection accent (electric orange).
+// Primary selection accent (electric orange).
 pub const ACCENT_ORANGE: Color = Color::from_rgb(0.941, 0.216, 0.031); // ~#f03708
 pub const ACCENT_ORANGE_HOVER: Color = Color::from_rgb(1.000, 0.420, 0.200);
 pub const ACCENT_ORANGE_ACTIVE: Color = Color::from_rgb(0.800, 0.180, 0.020);
@@ -176,7 +176,7 @@ pub fn section_header_style(_theme: &iced::Theme) -> container::Style {
     }
 }
 
-/// Compact uppercase section title used as a ProPresenter-style rail header.
+/// Compact uppercase section title used as a rail header.
 pub fn section_title_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(BG_DARKEST)),
@@ -207,7 +207,7 @@ pub fn primary_button(theme: &iced::Theme, status: button::Status) -> button::St
     }
 }
 
-/// Compact square icon button used in the ProPresenter-style top toolbar (~30px).
+/// Compact square icon button used in the top toolbar (~30px).
 pub fn toolbar_icon_button(theme: &iced::Theme, status: button::Status) -> button::Style {
     let mut s = ghost_button(theme, status);
     s.border = Border {

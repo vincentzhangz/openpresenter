@@ -7,7 +7,7 @@ use iced::{
     widget::{Space, button, column, container, row, scrollable, text, text_input},
 };
 
-/// Messages owned by the Props feature module (see `AGENTS.md`).
+/// Messages owned by the Props feature module.
 ///
 /// `SetMask` and `TogglePropsPanel` stay as root variants (they are global
 /// rendering/navigation controls, not props-feature state).
@@ -67,6 +67,7 @@ pub(crate) fn prop_toggle(w: &mut MainWindow, id: String) -> Task<RootMessage> {
 
 pub(crate) fn prop_remove(w: &mut MainWindow, id: String) -> Task<RootMessage> {
     w.props.manager.remove_prop(&id);
+    w.save_props();
     Task::none()
 }
 
@@ -94,6 +95,7 @@ pub(crate) fn prop_add_text(w: &mut MainWindow) -> Task<RootMessage> {
     };
     w.props.manager.add_prop(prop);
     w.props.new_prop_name.clear();
+    w.save_props();
     Task::none()
 }
 
@@ -158,16 +160,19 @@ pub(crate) fn create_lower_third(w: &mut MainWindow) -> Task<RootMessage> {
     for prop in props {
         w.props.manager.add_prop(prop);
     }
+    w.save_props();
     Task::none()
 }
 
 pub(crate) fn apply_look(w: &mut MainWindow, id: String) -> Task<RootMessage> {
     w.props.manager.apply_look(&id);
+    w.save_props();
     Task::none()
 }
 
 pub(crate) fn remove_look(w: &mut MainWindow, id: String) -> Task<RootMessage> {
     w.props.manager.remove_look(&id);
+    w.save_props();
     Task::none()
 }
 
@@ -179,6 +184,7 @@ pub(crate) fn save_look(w: &mut MainWindow) -> Task<RootMessage> {
     };
     w.props.manager.save_look(name);
     w.props.new_look_name.clear();
+    w.save_props();
     Task::none()
 }
 
@@ -189,6 +195,7 @@ pub(crate) fn look_name_changed(w: &mut MainWindow, name: String) -> Task<RootMe
 
 pub(crate) fn set_mask(w: &mut MainWindow, mask: Mask) -> Task<RootMessage> {
     w.props.manager.active_mask = mask;
+    w.save_props();
     Task::none()
 }
 

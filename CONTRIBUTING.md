@@ -43,22 +43,73 @@ cargo run
   motivation. Link any related issues.
 - CI must be green (fmt, clippy, test) before a PR can be merged.
 
-## Code Conventions
+## Architecture & Layering
 
-OpenPresenter follows a layered architecture (see the [README](README.md#architecture)):
+OpenPresenter follows a strict one-way acyclic layered architecture (see [`docs/architecture.md`](docs/architecture.md)):
 
-- **`domain/`** holds the pure data model — no I/O, no `iced`.
-- **`services/`** contains business logic that orchestrates repositories and the
-  domain. Services must never reference `iced`, `MainWindow`, or UI message types.
-- **`ui/`** is the iced application. Prefer moving feature logic into a per-feature
-  module under `ui/` (e.g. `ui/slides`, `ui/layers`, `ui/props`) that owns its own
-  nested `Message` enum and auto-wraps into the root `Message` via `impl From`. Do
-  **not** expand the root `Message` enum with new feature variants.
-- Per-feature state lives in `ui/state.rs` as cohesive `State` structs owned by
-  `MainWindow`.
-- Errors use `anyhow::Result` for fallible operations and `thiserror` for typed
-  domain errors. Surface user-action failures through `MainWindow::set_error`
-  rather than adding new `eprintln!` paths.
+```
+src/
+├── domain/      # Pure data models (Presentation, Slide, Object, Cue, Action, Playlist, Prop, Look)
+│                # Serde + pure domain helpers only. NO I/O, NO iced.
+├── db/          # SQLite persistence (rusqlite) + versioned migrations.
+├── services/    # Business logic orchestration over repositories (no iced, no UI types).
+├── render/      # Software BGRA rasteriser + GPU glyphon/wgpu text renderer.
+├── ndi/         # NDI SDK v6 FFI sender loop.
+├── media/       # FFmpeg video decoder + rodio audio playback.
+├── recording/   # H.264 video recording pipeline.
+├── triggers/    # HTTP (axum), OSC (rosc), and macro automation dispatchers.
+├── output/      # Multi-screen output routing & look configuration models.
+└── ui/          # iced application shell + per-feature modules.
+```
+
+**Dependency Rule**: `ui → services → db / domain`; `ui → triggers`; `ui → render / media / ndi`.
+Nothing outside `ui` may depend on `iced`.
+
+## Feature Modules & Message Pattern
+
+Each feature in `ui/` (e.g. `ui/slides`, `ui/playlist`, `ui/stage`, `ui/library`, `ui/props`, `ui/output`, `ui/songs`, `ui/bible`) must follow the nested `Message` pattern:
+
+1. **Feature-scoped `Message` enum**:
+   ```rust
+   #[derive(Debug, Clone)]
+   pub enum Message {
+       DoSomething,
+   }
+   ```
+2. **Auto-wrap into root `Message`** via `impl From<Message> for RootMessage` (in `src/ui/messages.rs`).
+3. **Module `update` function**:
+   ```rust
+   pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> { ... }
+   ```
+4. **State encapsulation**: Feature state lives in a dedicated struct in `src/ui/state.rs` (e.g. `StageState`, `LibraryState`) and is owned by `MainWindow`.
+
+## Quality & Parity Standards
+
+- **Zero Panics in Production**: Live operators must never experience a crash. Never index slices or collections with direct brackets `[index]` without bounds clamping or `.get(index)`.
+- **User Error Toasting**: Surface errors via `MainWindow::set_error(msg)` which populates `ui.error_message`. Do not introduce new `eprintln!` error paths.
+- **NDI & Multi-Screen Parity**: Layer clears (`ClearAll`, `ClearSlide`, `ClearMedia`, `ClearProps`, `ClearMessages`) and blackouts must synchronize across both physical displays and live NDI streams.
+- **Strict Linting**: CI checks `cargo clippy --no-default-features -- -D warnings` and `cargo fmt --check`. Keep both clean.
+
+## Testing Guidelines
+
+Run tests for specific layers or full suites:
+
+```bash
+# Full test suite
+cargo test --no-default-features
+
+# Domain unit tests
+cargo test --lib domain --no-default-features
+
+# Render pipeline tests
+cargo test --lib render --no-default-features
+
+# Output and multi-screen routing tests
+cargo test --lib output --no-default-features
+
+# Database integration tests
+cargo test --test db_integration --no-default-features
+```
 
 ## Code of Conduct
 

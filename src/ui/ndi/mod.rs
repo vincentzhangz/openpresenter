@@ -2,7 +2,7 @@ use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message as RootMessage;
 use crate::ui::output;
 
-/// Messages owned by the NDI feature module (see `AGENTS.md`).
+/// Messages owned by the NDI feature module.
 ///
 /// `NdiBlackScreen` and `ClearOutput` stay as root variants: they are global
 /// output controls (clear/black the live output) emitted from the Show and

@@ -4,6 +4,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, button, column, container, row, text, text_input},
 };
+use iced_font_awesome::fa_icon_solid;
 
 pub fn new_presentation_dialog<'a>(name: &'a str) -> Element<'a, Message> {
     let card = column![
@@ -47,7 +48,7 @@ pub fn new_presentation_dialog<'a>(name: &'a str) -> Element<'a, Message> {
 pub fn shortcuts_overlay<'a>() -> Element<'a, Message> {
     let shortcut = |key: &'static str, desc: &'static str| -> Element<'a, Message> {
         row![
-            container(text(key).size(11).color(theme::TEXT_SECONDARY)).width(140),
+            container(text(key).size(11).color(theme::TEXT_SECONDARY)).width(150),
             text(desc).size(11).color(theme::TEXT_MUTED),
         ]
         .spacing(8)
@@ -55,32 +56,56 @@ pub fn shortcuts_overlay<'a>() -> Element<'a, Message> {
     };
 
     let card = column![
-        text("Keyboard Shortcuts")
-            .size(16)
-            .color(theme::TEXT_PRIMARY),
-        Space::new().height(14),
-        text("EDITOR").size(10).color(theme::TEXT_MUTED),
+        row![
+            fa_icon_solid("keyboard")
+                .size(16.0_f32)
+                .color(theme::ACCENT_ORANGE),
+            Space::new().width(8),
+            text("Keyboard Shortcuts & Hotkeys")
+                .size(16)
+                .color(theme::TEXT_PRIMARY),
+        ]
+        .align_y(Alignment::Center),
+        Space::new().height(12),
+        text("SHOW & LIVE NAVIGATION")
+            .size(10)
+            .color(theme::TEXT_MUTED),
         Space::new().height(4),
-        shortcut("?", "Toggle this overlay"),
+        shortcut("→ / ↓ / Space / PgDn", "Advance to next slide"),
+        shortcut("← / ↑ / PgUp", "Return to previous slide"),
+        shortcut("1 … 9", "Jump directly to slide 1–9"),
+        shortcut("V", "Jump to next Verse group"),
+        shortcut("C", "Jump to next Chorus group"),
+        shortcut("Home / End", "First / Last slide"),
+        Space::new().height(10),
+        text("CLEAR CONTROLS").size(10).color(theme::TEXT_MUTED),
+        Space::new().height(4),
+        shortcut("F1 / ⌘1 / Ctrl+1", "Clear All (Screen & Audio)"),
+        shortcut("F2 / ⌘2 / Ctrl+2", "Clear Slide Text"),
+        shortcut("F3 / ⌘3 / Ctrl+3", "Clear Media / Background"),
+        shortcut("F4 / ⌘4 / Ctrl+4", "Clear Props & Overlays"),
+        shortcut("F5 / ⌘5 / Ctrl+5", "Clear Audio playback"),
+        shortcut("F6 / ⌘6 / Ctrl+6", "Clear Messages & Alerts"),
+        shortcut("B", "Toggle Black screen"),
+        Space::new().height(10),
+        text("APP & SYSTEM").size(10).color(theme::TEXT_MUTED),
+        Space::new().height(4),
+        shortcut("⌘, / Ctrl+,", "Open Preferences / Configuration"),
+        shortcut("?", "Toggle this Shortcuts overlay"),
         shortcut("⌘Z / Ctrl+Z", "Undo"),
         shortcut("⌘⇧Z / Ctrl+Y", "Redo"),
-        Space::new().height(10),
-        text("PRESENTER").size(10).color(theme::TEXT_MUTED),
-        Space::new().height(4),
-        shortcut("→ or Space", "Next slide"),
-        shortcut("←", "Previous slide"),
-        shortcut("Escape", "Return to library"),
-        Space::new().height(20),
-        button(text("Close").size(13))
+        shortcut("Escape", "Dismiss modal / end text edit"),
+        Space::new().height(16),
+        button(text("Close").size(12))
             .on_press(Message::ToggleShortcutsOverlay)
-            .padding([8, 24])
+            .padding([7, 24])
             .style(theme::secondary_button),
     ]
-    .padding(28)
-    .spacing(4)
+    .padding(24)
+    .spacing(3)
     .align_x(Alignment::Start);
 
-    let dialog = container(card).width(380).style(theme::dialog_card_style);
+    let dialog = container(card).width(440).style(theme::dialog_card_style);
 
     container(dialog)
         .width(Length::Fill)

@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial public preview of OpenPresenter, a ProPresenter-inspired live
+- Initial public preview of OpenPresenter, a live
   presentation application written in Rust with the `iced` GUI framework.
-- Unified ProPresenter-style UI: left library/playlist rail, center stage and
+- Professional multi-dock UI: left library/playlist rail, center stage and
   slide thumbnails, and a right output/inspector dock, plus a collapsible bottom
   media bin.
 - Dark charcoal theme with an orange selection accent.
@@ -41,9 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > production use** yet. APIs, data formats, and features may change without
 > notice.
 
-- Stage display and multi-monitor output management are incomplete.
 - Hotkey / MIDI trigger backend is not yet implemented.
-- ProPresenter 6/7 import is planned but not available.
 - Windows and Linux packaging is not yet provided.
 
 [0.1.0]: https://github.com/vincentzhangz/openpresenter/releases/tag/v0.1.0

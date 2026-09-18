@@ -14,11 +14,41 @@ use iced::{
     },
 };
 
+#[derive(Clone, Debug)]
+pub struct CompositeLayers {
+    pub media_enabled: bool,
+    pub slide_enabled: bool,
+    pub props_enabled: bool,
+    pub messages_enabled: bool,
+    pub mask_enabled: bool,
+    pub props: Vec<crate::domain::Prop>,
+    pub live_message: Option<String>,
+    pub mask: crate::domain::Mask,
+    pub theme_override: Option<crate::domain::SlideTheme>,
+}
+
+impl Default for CompositeLayers {
+    fn default() -> Self {
+        Self {
+            media_enabled: true,
+            slide_enabled: true,
+            props_enabled: true,
+            messages_enabled: true,
+            mask_enabled: false,
+            props: Vec::new(),
+            live_message: None,
+            mask: crate::domain::Mask::None,
+            theme_override: None,
+        }
+    }
+}
+
 pub struct PresenterProgram {
     pub current: Option<Slide>,
     pub from: Option<Slide>,
     pub transition: Transition,
     pub progress: f32,
+    pub layers: CompositeLayers,
 }
 
 impl canvas::Program<Message> for PresenterProgram {
@@ -64,7 +94,17 @@ impl canvas::Program<Message> for PresenterProgram {
             (Some(from), Transition::Fade { .. } | Transition::Dissolve { .. })
                 if self.progress < 1.0 =>
             {
-                draw_slide(&mut frame, from, off_x, off_y, slide_w, slide_h, scale, 1.0);
+                draw_slide(
+                    &mut frame,
+                    from,
+                    off_x,
+                    off_y,
+                    slide_w,
+                    slide_h,
+                    scale,
+                    1.0,
+                    &self.layers,
+                );
                 draw_slide(
                     &mut frame,
                     current,
@@ -74,6 +114,7 @@ impl canvas::Program<Message> for PresenterProgram {
                     slide_h,
                     scale,
                     self.progress,
+                    &self.layers,
                 );
             }
 
@@ -88,6 +129,7 @@ impl canvas::Program<Message> for PresenterProgram {
                     slide_h,
                     scale,
                     1.0,
+                    &self.layers,
                 );
                 draw_slide(
                     &mut frame,
@@ -98,6 +140,7 @@ impl canvas::Program<Message> for PresenterProgram {
                     slide_h,
                     scale,
                     1.0,
+                    &self.layers,
                 );
             }
 
@@ -114,6 +157,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                         draw_slide(
                             &mut frame,
@@ -124,6 +168,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                     }
                     1 => {
@@ -136,6 +181,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                         draw_slide(
                             &mut frame,
@@ -146,6 +192,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                     }
                     2 => {
@@ -158,6 +205,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                         draw_slide(
                             &mut frame,
@@ -168,6 +216,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                     }
                     _ => {
@@ -180,6 +229,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                         draw_slide(
                             &mut frame,
@@ -190,6 +240,7 @@ impl canvas::Program<Message> for PresenterProgram {
                             slide_h,
                             scale,
                             1.0,
+                            &self.layers,
                         );
                     }
                 }
@@ -205,6 +256,7 @@ impl canvas::Program<Message> for PresenterProgram {
                     slide_h,
                     scale,
                     1.0 - self.progress * 0.3,
+                    &self.layers,
                 );
                 let zoom_scale = self.progress;
                 let zw = slide_w * zoom_scale;
@@ -220,6 +272,7 @@ impl canvas::Program<Message> for PresenterProgram {
                     zh,
                     scale * zoom_scale,
                     self.progress,
+                    &self.layers,
                 );
             }
 
@@ -228,17 +281,47 @@ impl canvas::Program<Message> for PresenterProgram {
                     let squeeze = 1.0 - self.progress * 2.0;
                     let zw = slide_w * squeeze;
                     let zx = off_x + (slide_w - zw) / 2.0;
-                    draw_slide(&mut frame, from, zx, off_y, zw, slide_h, scale, 1.0);
+                    draw_slide(
+                        &mut frame,
+                        from,
+                        zx,
+                        off_y,
+                        zw,
+                        slide_h,
+                        scale,
+                        1.0,
+                        &self.layers,
+                    );
                 } else {
                     let squeeze = (self.progress - 0.5) * 2.0;
                     let zw = slide_w * squeeze;
                     let zx = off_x + (slide_w - zw) / 2.0;
-                    draw_slide(&mut frame, current, zx, off_y, zw, slide_h, scale, 1.0);
+                    draw_slide(
+                        &mut frame,
+                        current,
+                        zx,
+                        off_y,
+                        zw,
+                        slide_h,
+                        scale,
+                        1.0,
+                        &self.layers,
+                    );
                 }
             }
 
             (Some(from), Transition::Clock { .. }) if self.progress < 1.0 => {
-                draw_slide(&mut frame, from, off_x, off_y, slide_w, slide_h, scale, 1.0);
+                draw_slide(
+                    &mut frame,
+                    from,
+                    off_x,
+                    off_y,
+                    slide_w,
+                    slide_h,
+                    scale,
+                    1.0,
+                    &self.layers,
+                );
                 draw_slide(
                     &mut frame,
                     current,
@@ -248,13 +331,32 @@ impl canvas::Program<Message> for PresenterProgram {
                     slide_h,
                     scale,
                     self.progress,
+                    &self.layers,
                 );
             }
 
             (Some(from), Transition::Wipe { angle_deg, .. }) if self.progress < 1.0 => {
-                draw_slide(&mut frame, from, off_x, off_y, slide_w, slide_h, scale, 1.0);
                 draw_slide(
-                    &mut frame, current, off_x, off_y, slide_w, slide_h, scale, 1.0,
+                    &mut frame,
+                    from,
+                    off_x,
+                    off_y,
+                    slide_w,
+                    slide_h,
+                    scale,
+                    1.0,
+                    &self.layers,
+                );
+                draw_slide(
+                    &mut frame,
+                    current,
+                    off_x,
+                    off_y,
+                    slide_w,
+                    slide_h,
+                    scale,
+                    1.0,
+                    &self.layers,
                 );
                 let cover_alpha = 1.0 - self.progress;
                 let _ = angle_deg;
@@ -272,9 +374,53 @@ impl canvas::Program<Message> for PresenterProgram {
 
             _ => {
                 draw_slide(
-                    &mut frame, current, off_x, off_y, slide_w, slide_h, scale, 1.0,
+                    &mut frame,
+                    current,
+                    off_x,
+                    off_y,
+                    slide_w,
+                    slide_h,
+                    scale,
+                    1.0,
+                    &self.layers,
                 );
             }
+        }
+
+        if self.layers.props_enabled && !self.layers.props.is_empty() {
+            draw_props(
+                &mut frame,
+                &self.layers.props,
+                off_x,
+                off_y,
+                slide_w,
+                slide_h,
+                scale,
+            );
+        }
+
+        if self.layers.messages_enabled && self.layers.live_message.is_some() {
+            draw_live_message(
+                &mut frame,
+                self.layers.live_message.as_deref().unwrap(),
+                off_x,
+                off_y,
+                slide_w,
+                slide_h,
+                scale,
+            );
+        }
+
+        if self.layers.mask_enabled {
+            draw_mask(
+                &mut frame,
+                &self.layers.mask,
+                off_x,
+                off_y,
+                slide_w,
+                slide_h,
+                scale,
+            );
         }
 
         let need_mask = matches!(
@@ -332,7 +478,27 @@ pub fn presenter_canvas_panel<'a>(
     progress: f32,
     video_frame: Option<&'a iced::widget::image::Handle>,
 ) -> Element<'a, Message> {
-    if let Some(s) = current {
+    presenter_composite_panel(
+        current,
+        from,
+        transition,
+        progress,
+        video_frame,
+        &CompositeLayers::default(),
+    )
+}
+
+pub fn presenter_composite_panel<'a>(
+    current: Option<&'a Slide>,
+    from: Option<&'a Slide>,
+    transition: Transition,
+    progress: f32,
+    video_frame: Option<&'a iced::widget::image::Handle>,
+    layers: &CompositeLayers,
+) -> Element<'a, Message> {
+    if layers.media_enabled
+        && let Some(s) = current
+    {
         match &s.content {
             SlideContent::Image { path, fit } if !path.is_empty() => {
                 return image_widget_panel(path, *fit);
@@ -355,6 +521,7 @@ pub fn presenter_canvas_panel<'a>(
         from: from.cloned(),
         transition,
         progress,
+        layers: layers.clone(),
     })
     .width(Length::Fill)
     .height(Length::Fill)
@@ -382,6 +549,7 @@ pub fn next_slide_canvas_panel<'a>(slide: Option<&'a Slide>) -> Element<'a, Mess
         from: None,
         transition: Transition::Cut,
         progress: 1.0,
+        layers: CompositeLayers::default(),
     })
     .width(Length::Fill)
     .height(Length::Fill)
@@ -398,9 +566,21 @@ fn draw_slide(
     h: f32,
     scale: f32,
     alpha: f32,
+    layers_cfg: &CompositeLayers,
 ) {
-    let bg = bg_to_color_alpha(&slide.background, alpha);
-    frame.fill_rectangle(Point::new(lx, ty), Size::new(w, h), bg);
+    if layers_cfg.media_enabled {
+        let bg_source = layers_cfg
+            .theme_override
+            .as_ref()
+            .map(|t| &t.background)
+            .unwrap_or(&slide.background);
+        let bg = bg_to_color_alpha(bg_source, alpha);
+        frame.fill_rectangle(Point::new(lx, ty), Size::new(w, h), bg);
+    }
+
+    if !layers_cfg.slide_enabled {
+        return;
+    }
 
     let mut layers = slide.effective_layers().into_owned();
     layers.sort_by_key(|l| l.z_order);
@@ -423,6 +603,13 @@ fn draw_slide(
                 style,
                 ..
             } => {
+                let mut resolved_style = style.clone();
+                if let Some(theme) = &layers_cfg.theme_override {
+                    resolved_style.font_family = theme.default_text_style.font_family.clone();
+                    resolved_style.color = theme.default_text_style.color;
+                    resolved_style.alignment = theme.default_text_style.alignment;
+                }
+                let style = &resolved_style;
                 let display_content = style.text_transform.apply(content);
                 let font_size = Pixels(style.font_size * scale);
                 let the_font = Font {
@@ -677,5 +864,133 @@ fn bg_to_color_alpha(bg: &Background, alpha: f32) -> Color {
             a: alpha,
             ..Color::BLACK
         },
+    }
+}
+
+fn draw_props(
+    frame: &mut Frame,
+    props: &[crate::domain::Prop],
+    lx: f32,
+    ty: f32,
+    w: f32,
+    h: f32,
+    scale: f32,
+) {
+    for prop in props {
+        if !prop.visible {
+            continue;
+        }
+        let px = lx + prop.x * w;
+        let py = ty + prop.y * h;
+        let pw = prop.width * w;
+        let ph = prop.height * h;
+
+        match &prop.content {
+            crate::domain::PropContent::Rectangle {
+                color,
+                corner_radius: _,
+            } => {
+                let col = Color::from_rgba(color[0], color[1], color[2], color[3]);
+                frame.fill_rectangle(Point::new(px, py), Size::new(pw, ph), col);
+            }
+            crate::domain::PropContent::Text {
+                text: content,
+                font_size,
+                color,
+                bold,
+                italic,
+            } => {
+                let size = Pixels(*font_size * scale);
+                let col = Color::from_rgba(color[0], color[1], color[2], color[3]);
+                let the_font = Font {
+                    weight: if *bold {
+                        font::Weight::Bold
+                    } else {
+                        font::Weight::Normal
+                    },
+                    style: if *italic {
+                        font::Style::Italic
+                    } else {
+                        font::Style::Normal
+                    },
+                    ..Font::DEFAULT
+                };
+                frame.fill_text(canvas::Text {
+                    content: content.clone(),
+                    position: Point::new(px + pw / 2.0, py + ph / 2.0),
+                    color: col,
+                    size,
+                    font: the_font,
+                    max_width: pw,
+                    align_x: text::Alignment::Center,
+                    align_y: alignment::Vertical::Center,
+                    ..canvas::Text::default()
+                });
+            }
+            crate::domain::PropContent::Image { .. } => {}
+        }
+    }
+}
+
+fn draw_live_message(frame: &mut Frame, msg: &str, lx: f32, ty: f32, w: f32, _h: f32, scale: f32) {
+    let banner_w = (w * 0.85).max(200.0);
+    let banner_h = (46.0 * scale).max(32.0);
+    let bx = lx + (w - banner_w) / 2.0;
+    let by = ty + (24.0 * scale).max(12.0);
+
+    let bg_color = Color::from_rgba(0.06, 0.06, 0.08, 0.92);
+    let border_color = Color::from_rgb(0.95, 0.40, 0.10);
+
+    frame.fill_rectangle(Point::new(bx, by), Size::new(banner_w, banner_h), bg_color);
+    let border_path = Path::rectangle(Point::new(bx, by), Size::new(banner_w, banner_h));
+    frame.stroke(
+        &border_path,
+        canvas::Stroke::default()
+            .with_color(border_color)
+            .with_width((2.0 * scale).max(1.0)),
+    );
+
+    let font_size = Pixels((16.0 * scale).max(12.0));
+    frame.fill_text(canvas::Text {
+        content: format!("ALERT: {msg}"),
+        position: Point::new(bx + banner_w / 2.0, by + banner_h / 2.0),
+        color: Color::WHITE,
+        size: font_size,
+        font: Font {
+            weight: font::Weight::Bold,
+            ..Font::DEFAULT
+        },
+        max_width: banner_w - 20.0,
+        align_x: text::Alignment::Center,
+        align_y: alignment::Vertical::Center,
+        ..canvas::Text::default()
+    });
+}
+
+fn draw_mask(
+    frame: &mut Frame,
+    mask: &crate::domain::Mask,
+    lx: f32,
+    ty: f32,
+    w: f32,
+    h: f32,
+    scale: f32,
+) {
+    match mask {
+        crate::domain::Mask::Letterbox { bar_fraction } => {
+            let bh = h * bar_fraction.clamp(0.0, 0.45);
+            frame.fill_rectangle(Point::new(lx, ty), Size::new(w, bh), Color::BLACK);
+            frame.fill_rectangle(Point::new(lx, ty + h - bh), Size::new(w, bh), Color::BLACK);
+        }
+        crate::domain::Mask::FrameBorder { thickness, color } => {
+            let sw = thickness * scale.max(1.0);
+            let col = Color::from_rgba(color[0], color[1], color[2], color[3]);
+            let path = Path::rectangle(Point::new(lx, ty), Size::new(w, h));
+            frame.stroke(
+                &path,
+                canvas::Stroke::default().with_color(col).with_width(sw),
+            );
+        }
+        _ => {}
     }
 }

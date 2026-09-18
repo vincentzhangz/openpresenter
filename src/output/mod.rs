@@ -82,8 +82,28 @@ impl OutputManager {
         let mut main = NamedOutput::new_window("main", "Main Output");
         main.active = true;
         m.add(main);
-        m.add(NamedOutput::new_window("stage", "Stage Monitor"));
+        let stream = NamedOutput::new_ndi("stream", "Broadcast Stream", "OpenPresenter");
+        m.add(stream);
+        let mut stage = NamedOutput::new_window("stage", "Stage Monitor");
+        stage.content = OutputContentRoute::Stage;
+        m.add(stage);
         m
+    }
+
+    pub fn get_look_config_or_default(
+        &self,
+        look: Option<&crate::domain::Look>,
+        screen_id: &str,
+    ) -> crate::domain::ScreenLookTarget {
+        if let Some(l) = look {
+            l.target_or_default(screen_id)
+        } else {
+            let mut def = crate::domain::ScreenLookTarget::default_for_screen(screen_id);
+            if screen_id == "stream" {
+                def.media_enabled = false;
+            }
+            def
+        }
     }
 
     pub fn add(&mut self, output: NamedOutput) {
@@ -152,5 +172,90 @@ impl OutputManager {
         if let Some(o) = self.get_mut(id) {
             o.label = label.into();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_manager_defaults() {
+        let m = OutputManager::with_defaults();
+        assert_eq!(m.len(), 3);
+        assert!(!m.is_empty());
+
+        let main = m.get("main").expect("main output exists");
+        assert!(main.active);
+        assert_eq!(main.content, OutputContentRoute::LiveSlide);
+
+        let stream = m.get("stream").expect("stream output exists");
+        assert_eq!(
+            stream.output_type,
+            OutputType::Ndi {
+                stream_name: "OpenPresenter".into()
+            }
+        );
+
+        let stage = m.get("stage").expect("stage output exists");
+        assert_eq!(stage.content, OutputContentRoute::Stage);
+    }
+
+    #[test]
+    fn output_manager_add_and_remove() {
+        let mut m = OutputManager::default();
+        assert!(m.is_empty());
+
+        let out = NamedOutput::new_window("aux", "Aux Screen");
+        m.add(out);
+        assert_eq!(m.len(), 1);
+
+        // Duplicate ID should not be added
+        let dup = NamedOutput::new_window("aux", "Aux Screen Duplicate");
+        m.add(dup);
+        assert_eq!(m.len(), 1);
+
+        m.set_active("aux", true);
+        assert!(m.get("aux").unwrap().active);
+
+        m.set_resolution("aux", 1280, 720);
+        assert_eq!(m.get("aux").unwrap().width, 1280);
+        assert_eq!(m.get("aux").unwrap().height, 720);
+
+        m.set_label("aux", "Lobby Display");
+        assert_eq!(m.get("aux").unwrap().label, "Lobby Display");
+
+        m.set_content("aux", OutputContentRoute::Blank);
+        assert_eq!(m.get("aux").unwrap().content, OutputContentRoute::Blank);
+
+        m.remove("aux");
+        assert!(m.is_empty());
+        assert!(m.get("aux").is_none());
+    }
+
+    #[test]
+    fn output_manager_look_config() {
+        let m = OutputManager::with_defaults();
+        let def_main = m.get_look_config_or_default(None, "main");
+        assert!(def_main.slide_enabled);
+        assert!(def_main.media_enabled);
+
+        let def_stream = m.get_look_config_or_default(None, "stream");
+        assert!(def_stream.slide_enabled);
+        assert!(!def_stream.media_enabled); // stream defaults to no background media for key/fill
+    }
+
+    #[test]
+    fn output_content_route_display() {
+        assert_eq!(OutputContentRoute::LiveSlide.to_string(), "Live Slide");
+        assert_eq!(OutputContentRoute::Stage.to_string(), "Stage Monitor");
+        assert_eq!(OutputContentRoute::Blank.to_string(), "Blank");
+        assert_eq!(
+            OutputContentRoute::Mirror {
+                source_id: "main".into()
+            }
+            .to_string(),
+            "Mirror: main"
+        );
     }
 }

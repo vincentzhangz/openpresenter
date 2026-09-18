@@ -4,12 +4,11 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 pub mod props;
-pub use props::{Look, Mask, Prop, PropContent, PropManager};
+pub use props::{LiveAlertMessage, Look, Mask, Prop, PropContent, PropManager, ScreenLookTarget};
 
 /// A presentation action that can be triggered by cues, macros, HTTP, or OSC.
 ///
-/// Mirrors ProPresenter's "Actions" — the operations an operator or automation
-/// can perform against the live output.
+/// Defines the operations an operator or automation can perform against the live output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Action {
     NextSlide,
@@ -17,7 +16,15 @@ pub enum Action {
     GotoSlide(usize),
     BlackScreen(bool),
     ClearOutput,
+    ClearSlide,
+    ClearMedia,
+    ClearProps,
+    ClearMessages,
+    ClearAudio,
     TriggerProp(String),
+    ApplyLook(String),
+    ShowMessage(String),
+    HideMessage,
     StartTimer,
     StopTimer,
     ResetTimer,
@@ -414,6 +421,42 @@ pub enum Transition {
         duration_ms: u64,
         angle_deg: i32,
     },
+}
+
+impl Transition {
+    pub fn duration_ms(&self) -> u64 {
+        match self {
+            Transition::Cut => 0,
+            Transition::Fade { duration_ms }
+            | Transition::Slide { duration_ms }
+            | Transition::Dissolve { duration_ms }
+            | Transition::Push { duration_ms, .. }
+            | Transition::Zoom { duration_ms }
+            | Transition::Flip { duration_ms }
+            | Transition::Clock { duration_ms }
+            | Transition::Wipe { duration_ms, .. } => *duration_ms,
+        }
+    }
+
+    pub fn with_duration(&self, dur: u64) -> Self {
+        match self {
+            Transition::Cut => Transition::Cut,
+            Transition::Fade { .. } => Transition::Fade { duration_ms: dur },
+            Transition::Slide { .. } => Transition::Slide { duration_ms: dur },
+            Transition::Dissolve { .. } => Transition::Dissolve { duration_ms: dur },
+            Transition::Push { direction, .. } => Transition::Push {
+                duration_ms: dur,
+                direction: *direction,
+            },
+            Transition::Zoom { .. } => Transition::Zoom { duration_ms: dur },
+            Transition::Flip { .. } => Transition::Flip { duration_ms: dur },
+            Transition::Clock { .. } => Transition::Clock { duration_ms: dur },
+            Transition::Wipe { angle_deg, .. } => Transition::Wipe {
+                duration_ms: dur,
+                angle_deg: *angle_deg,
+            },
+        }
+    }
 }
 
 impl Default for TextStyle {
@@ -914,5 +957,54 @@ mod tests {
         let p = Presentation::new("My Show".to_string());
         assert_eq!(p.name, "My Show");
         assert!(p.slides.is_empty());
+    }
+
+    #[test]
+    fn slide_cues_add_and_retain_action() {
+        let mut s = Slide::new_text("Amazing Grace".to_string());
+        assert!(s.cues.is_empty());
+        s.cues.push(Cue::new("Clear Slide", Action::ClearSlide));
+        s.cues.push(Cue::new("Start Timer", Action::StartTimer));
+        assert_eq!(s.cues.len(), 2);
+        assert!(matches!(s.cues[0].action, Action::ClearSlide));
+        assert!(matches!(s.cues[1].action, Action::StartTimer));
+        assert!(s.cues[0].enabled);
+    }
+
+    #[test]
+    fn song_verses_convert_to_presentation_slides() {
+        let mut song = Song::new("How Great Thou Art".to_string());
+        song.verses.push(Verse::new(
+            "Verse 1".to_string(),
+            "O Lord my God...".to_string(),
+            0,
+        ));
+        song.verses.push(Verse::new(
+            "Chorus".to_string(),
+            "Then sings my soul...".to_string(),
+            1,
+        ));
+
+        let slides: Vec<Slide> = song
+            .verses
+            .iter()
+            .map(|v| Slide::new_text_in_group(v.content.clone(), v.label.clone()))
+            .collect();
+
+        assert_eq!(slides.len(), 2);
+        assert_eq!(slides[0].group.as_deref(), Some("Verse 1"));
+        assert_eq!(slides[1].group.as_deref(), Some("Chorus"));
+    }
+
+    #[test]
+    fn slide_effective_layers_preserves_text_and_position() {
+        let slide = Slide::new_text("Hello OpenPresenter".to_string());
+        let layers = slide.effective_layers();
+        assert_eq!(layers.len(), 1);
+        if let ObjectContent::Text { text, .. } = &layers[0].content {
+            assert_eq!(text, "Hello OpenPresenter");
+        } else {
+            panic!("Expected text layer content");
+        }
     }
 }

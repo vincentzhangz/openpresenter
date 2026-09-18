@@ -70,8 +70,9 @@ pub fn presenting_view<'a>(
         .into();
     }
 
-    let current = &presentation.slides[slide_index];
-    let next_slide = presentation.slides.get(slide_index + 1);
+    let idx = slide_index.min(presentation.slides.len().saturating_sub(1));
+    let current = &presentation.slides[idx];
+    let next_slide = presentation.slides.get(idx + 1);
 
     let (from_slide, trans_type, trans_progress) = match transition {
         Some(ts) => (Some(&ts.from_slide), ts.transition, ts.progress),
@@ -350,7 +351,9 @@ fn slide_strip<'a>(presentation: &'a Presentation, active: usize) -> Column<'a, 
         }
 
         for i in start..(start + count) {
-            let slide = &presentation.slides[i];
+            let Some(slide) = presentation.slides.get(i) else {
+                continue;
+            };
             let is_live = i == active;
             let bg_color = bg_to_color(&slide.background);
             let preview_str = match &slide.content {
@@ -571,7 +574,7 @@ pub(crate) fn activate_slide(w: &mut MainWindow, to_idx: usize, animate: bool) -
             return Task::none();
         }
         if animate {
-            if to_idx == w.presenting.slide_index {
+            if to_idx == w.presenting.slide_index && w.presenting.slide_layer_active {
                 return Task::none();
             }
             pres.slides.get(w.presenting.slide_index).cloned()
@@ -593,7 +596,7 @@ pub(crate) fn next_slide(w: &mut MainWindow) -> Task<Message> {
         };
         let current_i = w.presenting.slide_index;
         let next = (current_i + 1).min(pres.slides.len().saturating_sub(1));
-        if next == current_i {
+        if next == current_i && w.presenting.slide_layer_active {
             return Task::none();
         }
         next
@@ -608,7 +611,7 @@ pub(crate) fn prev_slide(w: &mut MainWindow) -> Task<Message> {
         }
         let current_i = w.presenting.slide_index;
         let prev = current_i.saturating_sub(1);
-        if prev == current_i {
+        if prev == current_i && w.presenting.slide_layer_active {
             return Task::none();
         }
         prev
@@ -667,7 +670,7 @@ fn begin_slide_change(
     to_idx: usize,
     animate: bool,
 ) -> Task<Message> {
-    let (transition, ndi_slide, cues) = {
+    let (mut transition, ndi_slide, cues) = {
         let Some(ref pres) = w.presenting.presentation else {
             return Task::none();
         };
@@ -677,9 +680,17 @@ fn begin_slide_change(
         (target.transition, target.clone(), target.cues.clone())
     };
 
+    if matches!(transition, Transition::Cut) {
+        transition = w.presenting.global_transition;
+    }
+
     w.presenting.slide_context_index = None;
     w.presenting.group_submenu = false;
+    w.presenting.cue_submenu = false;
     w.presenting.slide_index = to_idx;
+    w.presenting.slide_layer_active = true;
+    w.presenting.media_layer_active = true;
+    w.output.black_screen = false;
 
     if animate && !matches!(transition, Transition::Cut) && !w.ui.reduce_motion {
         if let Some(from_slide) = from_slide {

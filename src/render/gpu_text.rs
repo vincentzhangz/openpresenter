@@ -271,8 +271,12 @@ impl GpuTextRenderer {
     }
 
     pub fn composite_bgra(base: &mut [u8], overlay: &[u8]) {
-        debug_assert_eq!(base.len(), overlay.len());
-        for (b_px, o_px) in base.chunks_exact_mut(4).zip(overlay.chunks_exact(4)) {
+        for (b_px, o_px) in base
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(overlay.as_chunks::<4>().0.iter())
+        {
             let a = o_px[3] as f32 / 255.0;
             if a <= 0.0 {
                 continue;

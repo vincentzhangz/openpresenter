@@ -1,9 +1,12 @@
 #[derive(Debug, Clone)]
 pub enum Message {
     Noop,
+    EscapePressed,
     DismissError,
     SwitchMode(ViewMode),
     SwitchInspectorTab(InspectorTab),
+    OpenTheme,
+    OpenTextEditor,
     FocusSearch,
     ToggleEditMode,
     SelectLeftSection(SidebarTab),
@@ -27,12 +30,30 @@ pub enum Message {
     CancelDelete,
 
     PresentingSelectSlide(usize),
+    PresentingSelectLastSlide,
     PresentingNextSlide,
     PresentingPrevSlide,
     ShowSlidesCursorMoved(iced::Point),
     ShowSlideContextMenu(usize),
     ShowSlideGroupSubmenu,
+    ShowSlideCueSubmenu,
+    ShowSlideTransitionSubmenu,
     HideSlideContextMenu,
+    ShowRailContextMenu(RailContextTarget),
+    HideRailContextMenu,
+    RailCursorMoved(iced::Point),
+    DuplicatePresentation(String),
+    EditPresentation(String),
+    ExportPresentation(String),
+    SongToPresentation(String),
+    AddSlideCue(usize, crate::domain::Cue),
+    ClearSlideCues(usize),
+    SetSlideTransition(usize, crate::domain::Transition),
+    EditSlide(usize),
+    SetSlideGridCols(usize),
+    SetSlideViewMode(SlideViewMode),
+    JumpToGroup(String),
+    SetGlobalTransition(crate::domain::Transition),
     AnimationTick,
 
     StartTimer,
@@ -43,6 +64,25 @@ pub enum Message {
     NdiSendCurrent,
     NdiBlackScreen,
     ClearOutput,
+    ClearAll,
+    ClearSlide,
+    ClearMedia,
+    ClearProps,
+    ClearMessages,
+    ClearAudio,
+
+    SelectPreviewScreen(String),
+    ToggleLooksMatrixModal,
+    SelectLook(String),
+    CreateLook(String),
+    DeleteLook(String),
+    LookNameInputChanged(String),
+    ToggleLookScreenLayer(String, String, LookLayerType),
+    SetLookScreenTheme(String, String, Option<String>),
+    SendLiveMessage(String),
+    DismissLiveMessage,
+    LiveMessageInputChanged(String),
+
     Ndi(crate::ui::ndi::Message),
 
     ImageFilePicked(Option<String>),
@@ -74,6 +114,7 @@ pub enum Message {
 
     OpenOutputWindow,
     CloseOutputWindow,
+    ToggleOutputWindow,
     OutputWindowOpened,
     ToggleOutputBlackScreen,
     WindowClosed(iced::window::Id),
@@ -103,6 +144,13 @@ pub enum Message {
     ToggleRecordingPanel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlideViewMode {
+    #[default]
+    Grid,
+    Table,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Edit,
@@ -123,9 +171,19 @@ pub enum RightDockTab {
     #[default]
     ShowControls,
     Props,
+    Messages,
     Triggers,
     Audio,
     Timers,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookLayerType {
+    Media,
+    Slide,
+    Props,
+    Messages,
+    Mask,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -136,6 +194,24 @@ pub enum SidebarTab {
     Library,
     Songs,
     Bible,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RailContextTarget {
+    Presentation(String),
+    Playlist(String),
+    LibraryAsset(String),
+    Song(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    General,
+    Screens,
+    NetworkNdi,
+    Transitions,
+    Advanced,
 }
 
 impl From<crate::ui::playlist::Message> for Message {
@@ -237,5 +313,20 @@ impl From<crate::ui::layers::Message> for Message {
 impl From<crate::ui::typography::Message> for Message {
     fn from(msg: crate::ui::typography::Message) -> Self {
         Message::Typography(msg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_slide_view_mode_defaults_to_grid() {
+        assert_eq!(SlideViewMode::default(), SlideViewMode::Grid);
+    }
+
+    #[test]
+    fn test_slide_view_mode_equality() {
+        assert_ne!(SlideViewMode::Grid, SlideViewMode::Table);
     }
 }

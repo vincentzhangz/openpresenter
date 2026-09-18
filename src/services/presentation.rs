@@ -57,6 +57,21 @@ impl PresentationService {
         self.repo.delete_presentation(id)
     }
 
+    /// Duplicate a presentation by ID, creating a new presentation with "(Copy)" suffix
+    /// and copying all of its slides.
+    pub fn duplicate_presentation(&self, id: &str) -> Result<Presentation> {
+        let pres = self.repo.get_presentation(id)?;
+        let new_pres = self
+            .repo
+            .create_presentation(&format!("{} (Copy)", pres.name))?;
+        for (i, slide) in pres.slides.iter().enumerate() {
+            let mut new_slide = slide.clone();
+            new_slide.id = uuid::Uuid::new_v4().to_string();
+            self.repo.add_slide(&new_pres.id, &new_slide, i as i32)?;
+        }
+        self.repo.get_presentation(&new_pres.id)
+    }
+
     /// Append a new empty text slide and return the reloaded presentation.
     pub fn add_slide(&self, presentation_id: &str) -> Result<Presentation> {
         let pres = self.repo.get_presentation(presentation_id)?;
@@ -259,5 +274,17 @@ mod tests {
         let pres = s.replace_slides(&pres.id, &slides).unwrap();
         assert_eq!(pres.slides.len(), 1);
         assert_eq!(pres.slides[0].notes.as_deref(), Some("note"));
+    }
+
+    #[test]
+    fn duplicate_presentation_copies_with_slides() {
+        let s = svc();
+        let pres = s.create("Original").unwrap();
+        let pres = s.add_slide(&pres.id).unwrap();
+        let dup = s.duplicate_presentation(&pres.id).unwrap();
+        assert_eq!(dup.name, "Original (Copy)");
+        assert_eq!(dup.slides.len(), 1);
+        assert_ne!(dup.id, pres.id);
+        assert_ne!(dup.slides[0].id, pres.slides[0].id);
     }
 }

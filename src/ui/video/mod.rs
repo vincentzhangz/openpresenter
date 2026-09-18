@@ -5,7 +5,7 @@ use crate::ui::messages::Message as RootMessage;
 use iced::Task;
 use iced::widget::image::Handle as ImageHandle;
 
-/// Messages owned by the Video feature module (see `AGENTS.md`).
+/// Messages owned by the Video feature module.
 ///
 /// `VideoFrameTick` stays as a root variant (it is injected by the per-frame
 /// subscription, not produced by a UI widget).

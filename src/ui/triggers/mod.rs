@@ -8,7 +8,7 @@ use iced::{
 };
 use iced_font_awesome::fa_icon_solid;
 
-/// Messages owned by the Triggers feature module (see `AGENTS.md`).
+/// Messages owned by the Triggers feature module.
 ///
 /// `ToggleTriggersPanel` (global panel visibility) and `TriggerFired`
 /// (external trigger events injected via subscription) stay as root variants.
@@ -115,10 +115,47 @@ pub(crate) fn apply_action(w: &mut MainWindow, action: Action) -> Task<RootMessa
         }
         Action::ClearOutput => {
             w.output.black_screen = true;
+            w.presenting.slide_layer_active = false;
+            w.presenting.media_layer_active = false;
+            for p in &mut w.props.manager.props {
+                p.visible = false;
+            }
+            w.props.manager.clear_message();
             Task::none()
         }
+        Action::ClearSlide => {
+            w.presenting.slide_layer_active = false;
+            Task::none()
+        }
+        Action::ClearMedia => {
+            w.presenting.media_layer_active = false;
+            Task::none()
+        }
+        Action::ClearProps => {
+            for p in &mut w.props.manager.props {
+                p.visible = false;
+            }
+            Task::none()
+        }
+        Action::ClearMessages => {
+            w.props.manager.clear_message();
+            Task::none()
+        }
+        Action::ClearAudio => crate::ui::audio::stop(w),
         Action::TriggerProp(id) => {
             w.props.manager.toggle_prop(&id);
+            Task::none()
+        }
+        Action::ApplyLook(id) => {
+            w.props.manager.active_look_id = Some(id);
+            Task::none()
+        }
+        Action::ShowMessage(text) => {
+            w.props.manager.set_message(text);
+            Task::none()
+        }
+        Action::HideMessage => {
+            w.props.manager.clear_message();
             Task::none()
         }
         Action::StartTimer => {

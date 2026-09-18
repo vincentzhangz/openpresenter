@@ -7,7 +7,7 @@ use iced::{
 };
 use iced_font_awesome::fa_icon_solid;
 
-/// Messages owned by the Recording feature module (see `AGENTS.md`).
+/// Messages owned by the Recording feature module.
 ///
 /// `ToggleRecordingPanel` stays as a root variant (it is a global panel
 /// visibility toggle shared with the navbar).

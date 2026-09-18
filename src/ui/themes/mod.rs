@@ -3,7 +3,7 @@ use crate::ui::main_window::MainWindow;
 use crate::ui::messages::Message as RootMessage;
 use iced::Task;
 
-/// Messages owned by the Themes feature module (see `AGENTS.md`).
+/// Messages owned by the Themes feature module.
 ///
 /// NOTE: the theme controls are rendered inline inside the editor inspector's
 /// Theme tab; this module owns the message enum and dispatch logic only.

@@ -9,16 +9,15 @@
 [![Rust](https://img.shields.io/badge/rust-1.97%2B-orange.svg)](https://www.rust-lang.org/)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
-> [!WARNING]
-> **Early Development** — OpenPresenter is currently in active early development. APIs, data formats, and features may change without notice between versions. Expect rough edges, missing features, and occasional crashes. **Not recommended for production use yet.**
-
-OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rust. It targets live production environments where reliability, low latency, and NDI video output matter. The entire stack — UI, renderer, database, media pipeline, and HTTP/OSC trigger system — lives in a single codebase with no Electron or web runtime.
+OpenPresenter is a live presentation tool built entirely in Rust. It targets live production environments where reliability, low latency, and NDI/multi-screen video output matter. The entire stack — UI, renderer, database, media pipeline, and HTTP/OSC trigger system — lives in a single codebase with no Electron or web runtime.
 
 ---
 
 ## Contents
 
 - [Features](#features)
+- [Operator Keyboard Shortcuts](#operator-keyboard-shortcuts)
+- [Documentation](#documentation)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -35,45 +34,70 @@ OpenPresenter is a ProPresenter-inspired presentation tool built entirely in Rus
 
 ### Implemented
 
-| Area                  | Details                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| **Editor UI**         | Dark three-panel layout: slide thumbnail sidebar, canvas editor, tabbed inspector   |
-| **Presenter view**    | Full-screen show mode with visual slide sidebar and toolbar                         |
-| **Library**           | SQLite-backed presentation and song library with FTS5 full-text search              |
-| **CRUD**              | Create, rename, delete presentations, slides, and songs                             |
-| **Text slides**       | Configurable font, size, color, alignment, text transforms per slide                |
-| **Layers**            | Per-slide layer stack: text, background color/image, video                          |
-| **Songs & lyrics**    | Song library with verse/chorus structure; OpenLyrics XML import/export              |
-| **Import / Export**   | OpenLyrics (`.xml`), OpenPresenter Package (`.opp` — zip bundle)                    |
-| **Transitions**       | Cut, Fade, and Slide (horizontal wipe) — duration per slide                         |
-| **Props & Looks**     | Lower-third and logo overlays; save/restore visibility "Looks"                      |
-| **NDI output**        | Real-time 30 fps NDI stream via NDI SDK v6 FFI bindings                             |
-| **GPU text**          | Hardware-accelerated text via [glyphon](https://github.com/grovesNL/glyphon) + wgpu |
-| **Software renderer** | CPU BGRA rasteriser with shadow, outline, and alpha blending (fallback)             |
-| **Video decoding**    | FFmpeg-backed frame decoder with hardware-accelerated paths where available         |
-| **Audio playback**    | rodio-based audio player with load/play/pause/stop/volume                           |
-| **Recording**         | H.264 video recording pipeline via FFmpeg encoder with bounded backpressure         |
-| **HTTP triggers**     | axum 0.8 REST API for remote slide control (`/api/slides/next`, etc.)               |
-| **OSC triggers**      | rosc-powered Open Sound Control listener (`/slide/next`, `/black`, etc.)            |
-| **Macros**            | Scheduled trigger sequences with optional looping                                   |
-| **Slide cues**        | Per-slide trigger actions (immediate or delayed) fired when a slide goes live       |
-| **Themes**            | Reusable visual themes stored in the database                                       |
-| **Service planning**  | Service plan with ordered items backed by SQLite                                    |
-| **Bible**             | Bible verse database with FTS5 search (translations, books, chapters)               |
-| **CI**                | GitHub Actions pipeline: fmt → clippy → test → Linux build check                    |
+| Area                         | Details                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| **Unified Professional Shell**| Dark multi-dock layout: left library/playlist rail, center canvas & live view, right dock   |
+| **Quick Clear & Blackout**   | Broadcast-grade quick clear actions (`Clear All`, `Slide`, `Media`, `Props`, `Messages`) and seamless Blackout with live NDI synchronization |
+| **Stage Display / Confidence Monitor** | Dedicated stage display window with live wall clock, countdown timer, current/next slide text, and stage alerts |
+| **Multi-Object Compositor**  | Canvas & frame rasteriser supporting multi-layer text, shapes (rectangle, ellipse, triangle, line), images, and video with z-ordering |
+| **Multi-Screen & Looks Matrix** | Routing matrix for up to 8 outputs (Window / NDI); toggle layers per display; custom looks  |
+| **Screen Output Management** | Configure screen destinations, 720p/1080p resolution changes, output routing modal        |
+| **Editor UI & Object Strip** | Canvas editor with interactive bottom object chip strip for layer selection and reordering  |
+| **Presenter View**           | Full-screen show mode with visual slide grid, live preview, transition controls, and timers |
+| **Inspector & Typography**   | Text styling, font family selector, size stepper, style copy/paste clipboard, glow effects  |
+| **Interactive Layers**       | Layer stack with per-object visibility toggle (eye), lock toggle, reordering, and deletion |
+| **Color Presets & Swatches** | Presentation-optimized color palettes with instant one-click swatches                       |
+| **Library & Assets**         | SQLite-backed presentation and song library with FTS5 search; seamless sidebar layout       |
+| **Songs & Lyrics**           | Song editor with verse/chorus structure; inline OpenLyrics XML import/export                |
+| **Package Import / Export**  | OpenPresenter Package (`.opp` zip bundle) import/export directly in presentation list       |
+| **Transitions**              | Cut, Fade, and Slide (horizontal wipe) with per-slide duration                              |
+| **Props & Overlays**         | Lower-thirds, logo bugs, alerts, and saved visibility Looks                                 |
+| **NDI Output**               | Real-time 30 fps NDI stream via NDI SDK v6 FFI bindings with toggleable live navbar badge   |
+| **GPU Text Rendering**       | Hardware-accelerated text via [glyphon](https://github.com/grovesNL/glyphon) + wgpu          |
+| **Software Renderer**        | CPU BGRA rasteriser with shadow, outline, shape rasterisation, and alpha blending fallback |
+| **Video Decoding**           | Modern FFmpeg 9-backed frame decoder with hardware acceleration paths where available       |
+| **Audio Playback**           | rodio-based audio player with load/play/pause/stop/volume                                   |
+| **Recording**                | H.264 video recording pipeline via FFmpeg encoder with bounded backpressure                 |
+| **HTTP Triggers**            | axum 0.8 REST API for remote slide control (`/api/slides/next`, etc.)                       |
+| **OSC Triggers**             | rosc-powered Open Sound Control listener (`/slide/next`, `/black`, etc.)                    |
+| **Macros & Automation**      | Scheduled trigger sequences with optional looping                                           |
+| **Slide Cues**               | Per-slide trigger actions (immediate or delayed) fired when a slide goes live               |
+| **Themes**                   | Reusable slide visual themes stored in SQLite database with import/export capabilities      |
+| **Service Planning**         | Service plans with ordered items backed by SQLite                                           |
+| **Bible Database**           | Scripture database with FTS5 search (translations, books, chapters, verses)                 |
+| **CI & Quality Assurance**   | Automated test suite (130+ unit tests), zero-warning clippy and rustfmt enforcement         |
 
-### In Progress
+---
 
-- Stage display (secondary monitor audience view)
-- Multi-monitor output management
-- Slide compositor with full layer blending
+## Operator Keyboard Shortcuts
 
-### Planned
+OpenPresenter provides standard operator shortcuts for rapid live control:
 
-- Windows and Linux packaging
-- Hotkey / MIDI trigger backend
-- Thumbnail generation for video media
-- ProPresenter 6/7 import
+| Key Combination | Action |
+| --- | --- |
+| <kbd>Space</kbd> / <kbd>→</kbd> / <kbd>↓</kbd> | Next Slide |
+| <kbd>←</kbd> / <kbd>↑</kbd> | Previous Slide |
+| <kbd>1</kbd> – <kbd>9</kbd> | Jump directly to Slide index |
+| <kbd>F1</kbd> | **Clear All** (clears slide, media, props, and messages) |
+| <kbd>F2</kbd> | **Clear Slide** (clears text and foreground slide content) |
+| <kbd>F3</kbd> | **Clear Background / Media** |
+| <kbd>F4</kbd> | **Clear Props** |
+| <kbd>F5</kbd> | **Clear Messages** |
+| <kbd>F6</kbd> / <kbd>B</kbd> | Toggle **Blackout** (instant black screen across outputs & NDI) |
+| <kbd>V</kbd> | Toggle View Mode (Show / Edit / Stage / Unified) |
+| <kbd>C</kbd> | Clear Active Output |
+| <kbd>Cmd</kbd> + <kbd>,</kbd> / <kbd>Ctrl</kbd> + <kbd>,</kbd> | Open Settings Modal |
+
+---
+
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+- [**User Guide**](docs/user_guide.md) — Comprehensive guide for operators and worship media teams.
+- [**Architecture & Internals**](docs/architecture.md) — Detailed architecture, data flow, and threading model.
+- [**API & Remote Control**](docs/api_and_control.md) — REST API endpoints, OSC address map, and macro reference.
+- [**Configuration & Outputs**](docs/configuration.md) — Screen setup, NDI streaming, and configuration options.
 
 ---
 
@@ -98,7 +122,7 @@ src/
     ├── messages.rs     # Root Message + ViewMode / SidebarTab / RightDockTab enums
     ├── state.rs        # Per-feature State structs (Editor, Presenting, Shell, …)
     ├── theme.rs        # Dark charcoal palette + orange accent, container/button styles
-    ├── shell/          # Unified ProPresenter-style layout: left_rail, center,
+    ├── shell/          # Multi-dock layout: left_rail, center,
     │                   #   right_dock, media_bin, show, edit, unified
     └── <feature>/      # Per-feature modules (playlist, slides, layers, presenter,
         (e.g. slides,    #   props, audio, library, themes, triggers, recording, bible,
@@ -281,7 +305,7 @@ cargo doc --no-deps --open
 
 ## Contributing
 
-Contributions are welcome. Please read the guidelines below before opening a pull request.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [Architecture Guide](docs/architecture.md) for architectural guidelines, message conventions, and state organization before opening a pull request.
 
 ### Getting Started
 
@@ -323,7 +347,7 @@ Contributions are welcome. Please read the guidelines below before opening a pul
 | GPU rendering  | [wgpu](https://wgpu.rs/)                       | 28      |
 | Text rendering | [glyphon](https://docs.rs/glyphon/)            | 0.10    |
 | Database       | [rusqlite](https://docs.rs/rusqlite/)          | 0.38    |
-| Media decoding | [ffmpeg-next](https://docs.rs/ffmpeg-next/)    | 8       |
+| Media decoding | [ffmpeg-next](https://docs.rs/ffmpeg-next/)    | 9       |
 | Audio          | [rodio](https://docs.rs/rodio/)                | 0.22    |
 | NDI output     | NDI SDK v6 (bindgen FFI)                       | 6       |
 | HTTP triggers  | [axum](https://docs.rs/axum/)                  | 0.8     |
@@ -341,7 +365,3 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 
 You may not use this software except in compliance with the License.
 A copy of the License is included in this repository as [`LICENSE`](LICENSE).
-
----
-
-*OpenPresenter is not affiliated with nor endorsed by Renewed Vision (ProPresenter).*

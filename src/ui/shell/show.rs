@@ -54,6 +54,10 @@ pub fn view<'a>(
         context_slide_index,
         context_position,
         show_group_submenu,
+        false,
+        false,
+        SHOW_SLIDE_COLS,
+        crate::ui::messages::SlideViewMode::Grid,
     );
     let media_bin = media_bin_workspace(lib_assets, selected_asset_id);
     let center = column![slides, media_bin]
@@ -288,99 +292,90 @@ fn section_panel<'a>(
     .style(theme::dark_panel_style)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn slides_workspace<'a>(
     presentation: Option<&'a Presentation>,
     slide_index: usize,
     context_slide_index: Option<usize>,
     context_position: Option<iced::Point>,
     show_group_submenu: bool,
+    show_cue_submenu: bool,
+    show_transition_submenu: bool,
+    cols: usize,
+    view_mode: crate::ui::messages::SlideViewMode,
 ) -> Element<'a, Message> {
-    let title = presentation
-        .map(|p| p.name.as_str())
-        .unwrap_or("No Presentation Selected");
-
-    let prev_btn = {
-        let b = button(text("Prev").size(11))
-            .padding([4, 10])
-            .style(theme::ghost_button);
-        if presentation.is_some() {
-            b.on_press(Message::PresentingPrevSlide)
-        } else {
-            b
-        }
-    };
-
-    let next_btn = {
-        let b = button(text("Next").size(11))
-            .padding([4, 10])
-            .style(theme::primary_button);
-        if presentation.is_some() {
-            b.on_press(Message::PresentingNextSlide)
-        } else {
-            b
-        }
-    };
-
-    let header = container(
-        row![
-            text("SLIDES").size(10).color(theme::TEXT_MUTED),
-            Space::new().width(12),
-            text(title).size(13).color(theme::TEXT_PRIMARY),
-            Space::new().width(Length::Fill),
-            prev_btn,
-            next_btn,
-        ]
-        .align_y(Alignment::Center)
-        .padding([8, 12])
-        .spacing(6),
-    )
-    .width(Length::Fill)
-    .style(theme::section_header_style);
-
-    let mut grid_col = Column::new().spacing(8).padding([10, 10]);
-    if let Some(pres) = presentation {
+    let list_content: Element<'a, Message> = if let Some(pres) = presentation {
         let total = pres.slides.len();
         if total == 0 {
-            grid_col = grid_col.push(
-                container(
-                    text("No slides in this presentation")
-                        .size(13)
-                        .color(theme::TEXT_MUTED),
-                )
-                .padding(20)
-                .center_x(Length::Fill),
-            );
+            container(
+                text("No slides in this presentation")
+                    .size(13)
+                    .color(theme::TEXT_MUTED),
+            )
+            .padding(20)
+            .center_x(Length::Fill)
+            .into()
+        } else if view_mode == crate::ui::messages::SlideViewMode::Table {
+            let thead = container(
+                row![
+                    container(text("#").size(10).color(theme::TEXT_MUTED))
+                        .width(36)
+                        .center_x(36),
+                    container(text("GROUP").size(10).color(theme::TEXT_MUTED)).width(110),
+                    container(text("CONTENT").size(10).color(theme::TEXT_MUTED))
+                        .width(Length::Fill),
+                    container(text("NOTES").size(10).color(theme::TEXT_MUTED)).width(140),
+                    container(text("CUES").size(10).color(theme::TEXT_MUTED)).width(80),
+                    container(text("STATUS").size(10).color(theme::TEXT_MUTED)).width(60),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .padding([6, 12]),
+            )
+            .style(theme::section_header_style);
+
+            let mut table_col = Column::new().spacing(4).padding([6, 8]);
+            for (i, slide) in pres.slides.iter().enumerate() {
+                let is_live = slide_index == i;
+                let is_next = slide_index + 1 == i;
+                table_col = table_col.push(slide_table_row(slide, i, is_live, is_next));
+            }
+            column![thead, scrollable(table_col).height(Length::Fill)].into()
         } else {
+            let num_cols = cols.clamp(2, 6);
+            let mut grid_col = Column::new().spacing(8).padding([10, 10]);
             let mut index = 0usize;
             while index < total {
                 let mut r = Row::new().spacing(8);
-                for offset in 0..SHOW_SLIDE_COLS {
+                for offset in 0..num_cols {
                     let i = index + offset;
                     if i < total {
-                        r = r.push(slide_tile(&pres.slides[i], i, slide_index == i));
+                        let is_live = slide_index == i;
+                        let is_next = slide_index + 1 == i;
+                        r = r.push(slide_tile(&pres.slides[i], i, is_live, is_next));
                     } else {
                         r = r.push(Space::new().width(Length::FillPortion(1)));
                     }
                 }
                 grid_col = grid_col.push(r);
-                index += SHOW_SLIDE_COLS;
+                index += num_cols;
             }
+            scrollable(grid_col).height(Length::Fill).into()
         }
     } else {
-        grid_col = grid_col.push(
-            container(
-                text("Select a presentation from the Library to load slides")
-                    .size(13)
-                    .color(theme::TEXT_MUTED),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center(Length::Fill),
-        );
-    }
+        container(
+            text("Select a presentation from the Library to load slides")
+                .size(13)
+                .color(theme::TEXT_MUTED),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center(Length::Fill)
+        .into()
+    };
 
     let tracked_base = mouse_area(
-        column![header, scrollable(grid_col).height(Length::Fill)]
+        container(list_content)
             .width(Length::Fill)
             .height(Length::Fill),
     )
@@ -390,6 +385,7 @@ pub fn slides_workspace<'a>(
         if let (Some(pres), Some(ctx_idx)) = (presentation, context_slide_index) {
             if let Some(ctx_slide) = pres.slides.get(ctx_idx) {
                 let current_group = ctx_slide.group.as_deref();
+                let current_trans = &ctx_slide.transition;
                 let context = context_position.unwrap_or(iced::Point::new(24.0, 24.0));
                 let slide_id = ctx_slide.id.clone();
                 let backdrop: Element<'a, Message> = mouse_area(container(
@@ -403,7 +399,10 @@ pub fn slides_workspace<'a>(
                     ctx_idx,
                     &slide_id,
                     current_group,
+                    current_trans,
                     show_group_submenu,
+                    show_cue_submenu,
+                    show_transition_submenu,
                 ))
                 .x(context.x + 2.0)
                 .y(context.y + 2.0)
@@ -429,67 +428,389 @@ pub fn slides_workspace<'a>(
         .into()
 }
 
-fn slide_tile<'a>(slide: &'a Slide, index: usize, live: bool) -> Element<'a, Message> {
-    let bg = match &slide.background {
-        Background::Solid(c) => Color::from_rgba8(c.r, c.g, c.b, c.a as f32 / 255.0),
-        _ => Color::BLACK,
-    };
-    let preview = match &slide.content {
-        SlideContent::Text { text, .. } => {
-            if text.trim().is_empty() {
-                String::from("(Empty)")
-            } else {
-                truncate(text, 44)
+fn slide_table_row<'a>(
+    slide: &'a Slide,
+    index: usize,
+    live: bool,
+    is_next: bool,
+) -> Element<'a, Message> {
+    let group = slide.group.as_deref().unwrap_or("Verse");
+    let group_color = group_option_color(group);
+
+    let idx_cell = container(text(format!("{}", index + 1)).size(12).color(if live {
+        theme::LIVE_GREEN
+    } else {
+        theme::TEXT_MUTED
+    }))
+    .width(36)
+    .center_x(36);
+
+    let group_pill = container(text(group).size(10).color(Color::WHITE))
+        .padding([2, 8])
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(IcedBackground::Color(group_color)),
+            border: Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+    let group_cell = container(group_pill).width(110);
+
+    let preview_text = match &slide.content {
+        SlideContent::Text { text, .. } if !text.trim().is_empty() => Some(text.as_str()),
+        _ => slide.layers.iter().find_map(|l| match &l.content {
+            crate::domain::ObjectContent::Text { text, .. } if !text.trim().is_empty() => {
+                Some(text.as_str())
             }
+            _ => None,
+        }),
+    };
+
+    let text_cell: Element<'a, Message> = if let Some(txt) = preview_text {
+        text(truncate(txt, 90))
+            .size(12)
+            .color(if live {
+                theme::TEXT_PRIMARY
+            } else {
+                theme::TEXT_SECONDARY
+            })
+            .width(Length::Fill)
+            .into()
+    } else {
+        match &slide.background {
+            Background::Image(_) => row![
+                fa_icon_solid("image")
+                    .size(11.0_f32)
+                    .color(theme::ACCENT_BLUE),
+                Space::new().width(6),
+                text("Background Image").size(11).color(theme::TEXT_MUTED),
+            ]
+            .align_y(Alignment::Center)
+            .into(),
+            Background::Video(_) => row![
+                fa_icon_solid("video")
+                    .size(11.0_f32)
+                    .color(theme::WARNING_AMBER),
+                Space::new().width(6),
+                text("Background Video").size(11).color(theme::TEXT_MUTED),
+            ]
+            .align_y(Alignment::Center)
+            .into(),
+            _ => text("(Empty Slide)")
+                .size(11)
+                .color(theme::TEXT_MUTED)
+                .into(),
         }
+    };
+
+    let notes_cell: Element<'a, Message> =
+        if let Some(notes) = slide.notes.as_deref().filter(|n| !n.trim().is_empty()) {
+            row![
+                fa_icon_solid("note-sticky")
+                    .size(10.0_f32)
+                    .color(theme::TEXT_MUTED),
+                Space::new().width(4),
+                text(truncate(notes, 20)).size(10).color(theme::TEXT_MUTED),
+            ]
+            .align_y(Alignment::Center)
+            .width(140)
+            .into()
+        } else {
+            Space::new().width(140).into()
+        };
+
+    let cue_cell: Element<'a, Message> = if slide.cues.is_empty() {
+        Space::new().width(80).into()
+    } else {
+        let mut cue_row = Row::new().spacing(3).align_y(Alignment::Center);
+        for cue in &slide.cues {
+            let icon_name = match &cue.action {
+                crate::domain::Action::StartTimer
+                | crate::domain::Action::StopTimer
+                | crate::domain::Action::ResetTimer => "clock",
+                crate::domain::Action::ClearSlide
+                | crate::domain::Action::ClearMedia
+                | crate::domain::Action::ClearProps
+                | crate::domain::Action::ClearMessages
+                | crate::domain::Action::ClearAudio
+                | crate::domain::Action::ClearOutput => "ban",
+                crate::domain::Action::ApplyLook(_) => "sliders",
+                crate::domain::Action::TriggerProp(_) => "gauge",
+                crate::domain::Action::ShowMessage(_) | crate::domain::Action::HideMessage => {
+                    "bullhorn"
+                }
+                _ => "bolt",
+            };
+            cue_row = cue_row.push(
+                container(fa_icon_solid(icon_name).size(8.0_f32).color(Color::WHITE))
+                    .padding([1, 3])
+                    .style(|_: &iced::Theme| iced::widget::container::Style {
+                        background: Some(IcedBackground::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        border: Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+            );
+        }
+        container(cue_row).width(80).into()
+    };
+
+    let status_cell: Element<'a, Message> = if live {
+        container(
+            row![
+                container(Space::new().width(6).height(6)).style(|_: &iced::Theme| {
+                    iced::widget::container::Style {
+                        background: Some(IcedBackground::Color(theme::LIVE_GREEN)),
+                        border: Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+                Space::new().width(4),
+                text("LIVE").size(9).color(theme::LIVE_GREEN),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(60)
+        .into()
+    } else if is_next {
+        container(
+            row![
+                container(Space::new().width(6).height(6)).style(|_: &iced::Theme| {
+                    iced::widget::container::Style {
+                        background: Some(IcedBackground::Color(theme::ACCENT_ORANGE)),
+                        border: Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+                Space::new().width(4),
+                text("NEXT").size(9).color(theme::ACCENT_ORANGE),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(60)
+        .into()
+    } else {
+        Space::new().width(60).into()
+    };
+
+    let row_content = row![
+        idx_cell,
+        group_cell,
+        container(text_cell).width(Length::Fill),
+        notes_cell,
+        cue_cell,
+        status_cell,
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .padding([5, 8]);
+
+    let row_btn = button(row_content)
+        .on_press(Message::PresentingSelectSlide(index))
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme, status| {
+            let (bg, border_color, border_width) = if live {
+                (
+                    Color::from_rgba(0.204, 0.780, 0.349, 0.12),
+                    theme::LIVE_GREEN,
+                    1.5,
+                )
+            } else if is_next {
+                (
+                    Color::from_rgba(0.941, 0.216, 0.031, 0.08),
+                    theme::ACCENT_ORANGE,
+                    1.0,
+                )
+            } else if matches!(status, iced::widget::button::Status::Hovered) {
+                (theme::BG_HOVER, theme::BORDER_PANEL, 1.0)
+            } else if index.is_multiple_of(2) {
+                (
+                    Color::from_rgba(1.0, 1.0, 1.0, 0.02),
+                    theme::BORDER_STRONG,
+                    1.0,
+                )
+            } else {
+                (theme::TRANSPARENT, theme::BORDER_STRONG, 1.0)
+            };
+            iced::widget::button::Style {
+                background: Some(IcedBackground::Color(bg)),
+                border: Border {
+                    color: border_color,
+                    width: border_width,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        });
+
+    mouse_area(row_btn)
+        .on_right_press(Message::ShowSlideContextMenu(index))
+        .into()
+}
+
+fn slide_tile<'a>(
+    slide: &'a Slide,
+    index: usize,
+    live: bool,
+    is_next: bool,
+) -> Element<'a, Message> {
+    let (bg, bg_media_icon) = match &slide.background {
+        Background::Solid(c) => (Color::from_rgba8(c.r, c.g, c.b, c.a as f32 / 255.0), None),
+        Background::Image(_) => (Color::from_rgb(0.08, 0.12, 0.16), Some("image")),
+        Background::Video(_) => (Color::from_rgb(0.12, 0.08, 0.16), Some("video")),
+    };
+
+    let preview = match &slide.content {
+        SlideContent::Text { text, .. } if !text.trim().is_empty() => truncate(text, 44),
         SlideContent::Image { .. } => String::from("Image"),
         SlideContent::Video { .. } => String::from("Video"),
+        _ => slide
+            .layers
+            .iter()
+            .find_map(|l| match &l.content {
+                crate::domain::ObjectContent::Text { text, .. } if !text.trim().is_empty() => {
+                    Some(truncate(text, 44))
+                }
+                crate::domain::ObjectContent::Image { .. } => Some(String::from("Image")),
+                crate::domain::ObjectContent::Video { .. } => Some(String::from("Video")),
+                crate::domain::ObjectContent::Shape { shape_type, .. } => {
+                    Some(format!("{:?}", shape_type))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| String::from("(Empty)")),
     };
 
     let group = slide.group.as_deref().unwrap_or("Verse");
     let group_color = group_option_color(group);
 
-    let thumb = container(
-        container(
-            text(preview)
-                .size(10)
-                .color(theme::TEXT_PRIMARY)
-                .width(Length::Fill),
-        )
-        .padding([8, 8])
-        .width(Length::Fill)
-        .height(Length::Fill),
-    )
+    let (border_color, border_width) = if live {
+        (theme::LIVE_GREEN, 2.5)
+    } else if is_next {
+        (theme::ACCENT_ORANGE, 2.0)
+    } else {
+        (theme::BORDER_STRONG, 1.0)
+    };
+
+    let media_badge: Element<'a, Message> = if let Some(icon) = bg_media_icon {
+        container(fa_icon_solid(icon).size(10.0_f32).color(theme::TEXT_MUTED))
+            .padding([2, 4])
+            .style(|_: &iced::Theme| iced::widget::container::Style {
+                background: Some(IcedBackground::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.6))),
+                border: Border {
+                    radius: 3.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+    } else {
+        Space::new().width(0).into()
+    };
+
+    let thumb_content = column![
+        row![media_badge, Space::new().width(Length::Fill)].align_y(Alignment::Center),
+        text(preview)
+            .size(10)
+            .color(theme::TEXT_PRIMARY)
+            .width(Length::Fill),
+    ]
+    .spacing(4)
     .width(Length::Fill)
-    .height(92)
-    .style(move |_: &iced::Theme| iced::widget::container::Style {
-        background: Some(IcedBackground::Color(bg)),
-        border: Border {
-            color: if live {
-                theme::LIVE_GREEN
-            } else {
-                theme::BORDER_STRONG
+    .height(Length::Fill);
+
+    let thumb = container(thumb_content)
+        .padding([6, 8])
+        .width(Length::Fill)
+        .height(92)
+        .style(move |_: &iced::Theme| iced::widget::container::Style {
+            background: Some(IcedBackground::Color(bg)),
+            border: Border {
+                color: border_color,
+                width: border_width,
+                radius: 2.0.into(),
             },
-            width: if live { 2.0 } else { 1.0 },
-            radius: 2.0.into(),
-        },
-        ..Default::default()
-    });
+            ..Default::default()
+        });
+
+    let cue_badges: Element<'a, Message> = if slide.cues.is_empty() {
+        Space::new().width(0).into()
+    } else {
+        let mut cue_row = Row::new().spacing(3).align_y(Alignment::Center);
+        for cue in &slide.cues {
+            let icon_name = match &cue.action {
+                crate::domain::Action::StartTimer
+                | crate::domain::Action::StopTimer
+                | crate::domain::Action::ResetTimer => "clock",
+                crate::domain::Action::ClearSlide
+                | crate::domain::Action::ClearMedia
+                | crate::domain::Action::ClearProps
+                | crate::domain::Action::ClearMessages
+                | crate::domain::Action::ClearAudio
+                | crate::domain::Action::ClearOutput => "ban",
+                crate::domain::Action::ApplyLook(_) => "sliders",
+                crate::domain::Action::TriggerProp(_) => "gauge",
+                crate::domain::Action::ShowMessage(_) | crate::domain::Action::HideMessage => {
+                    "bullhorn"
+                }
+                _ => "bolt",
+            };
+            cue_row = cue_row.push(
+                container(fa_icon_solid(icon_name).size(8.0_f32).color(Color::WHITE))
+                    .padding([1, 3])
+                    .style(|_: &iced::Theme| iced::widget::container::Style {
+                        background: Some(IcedBackground::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        border: Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+            );
+        }
+        cue_row.into()
+    };
+
+    let next_pill: Element<'a, Message> = if is_next && !live {
+        container(text("NEXT").size(8).color(Color::BLACK))
+            .padding([1, 4])
+            .style(|_: &iced::Theme| iced::widget::container::Style {
+                background: Some(IcedBackground::Color(theme::ACCENT_ORANGE)),
+                border: Border {
+                    radius: 2.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+    } else {
+        Space::new().width(0).into()
+    };
 
     let ribbon = container(
         row![
             text(format!("{}", index + 1)).size(11).color(Color::WHITE),
-            Space::new().width(8),
+            Space::new().width(6),
             text(group).size(11).color(Color::WHITE),
+            next_pill,
             Space::new().width(Length::Fill),
-            if slide.cues.is_empty() {
-                text("").size(1)
-            } else {
-                text(format!("{} cues", slide.cues.len()))
-                    .size(9)
-                    .color(Color::WHITE)
-            },
+            cue_badges,
         ]
+        .spacing(4)
         .align_y(Alignment::Center),
     )
     .padding([2, 6])
@@ -529,7 +850,10 @@ fn context_menu_panel<'a>(
     index: usize,
     slide_id: &str,
     current_group: Option<&str>,
+    current_transition: &Transition,
     show_group_submenu: bool,
+    show_cue_submenu: bool,
+    show_transition_submenu: bool,
 ) -> Element<'a, Message> {
     const GROUPS: &[&str] = &[
         "Verse",
@@ -567,7 +891,7 @@ fn context_menu_panel<'a>(
     };
     let current = current_group.unwrap_or_default().to_lowercase();
 
-    /// Styled, ProPresenter-like context menu item.
+    /// Styled context menu item.
     fn menu_item<'a>(
         content: impl Into<Element<'a, Message>>,
         on_press: Message,
@@ -611,6 +935,19 @@ fn context_menu_panel<'a>(
             .padding([4, 0])
             .into()
     }
+
+    let edit_slide = menu_item(
+        row![
+            fa_icon_solid("pen-to-square")
+                .size(11.0_f32)
+                .color(theme::TEXT_PRIMARY),
+            Space::new().width(8),
+            text("Edit Slide").size(13).color(theme::TEXT_PRIMARY),
+        ]
+        .align_y(Alignment::Center),
+        Message::EditSlide(index),
+        false,
+    );
 
     let add_after = menu_item(
         row![
@@ -668,13 +1005,63 @@ fn context_menu_panel<'a>(
         show_group_submenu,
     );
 
+    let cue_trigger = menu_item(
+        row![
+            fa_icon_solid("bolt")
+                .size(11.0_f32)
+                .color(theme::TEXT_PRIMARY),
+            Space::new().width(8),
+            text("Add Action").size(13).color(theme::TEXT_PRIMARY),
+            Space::new().width(Length::Fill),
+            fa_icon_solid("chevron-right")
+                .size(10.0_f32)
+                .color(theme::TEXT_MUTED),
+        ]
+        .align_y(Alignment::Center),
+        Message::ShowSlideCueSubmenu,
+        show_cue_submenu,
+    );
+
+    let transition_trigger = menu_item(
+        row![
+            fa_icon_solid("wand-magic-sparkles")
+                .size(11.0_f32)
+                .color(theme::TEXT_PRIMARY),
+            Space::new().width(8),
+            text("Transition").size(13).color(theme::TEXT_PRIMARY),
+            Space::new().width(Length::Fill),
+            fa_icon_solid("chevron-right")
+                .size(10.0_f32)
+                .color(theme::TEXT_MUTED),
+        ]
+        .align_y(Alignment::Center),
+        Message::ShowSlideTransitionSubmenu,
+        show_transition_submenu,
+    );
+
+    let clear_cues = menu_item(
+        row![
+            fa_icon_solid("ban").size(11.0_f32).color(theme::TEXT_MUTED),
+            Space::new().width(8),
+            text("Clear All Cues").size(13).color(theme::TEXT_MUTED),
+        ]
+        .align_y(Alignment::Center),
+        Message::ClearSlideCues(index),
+        false,
+    );
+
     let main_items = column![
+        edit_slide,
+        menu_divider(),
         add_after,
         duplicate,
+        delete,
         menu_divider(),
         group_trigger,
+        cue_trigger,
+        transition_trigger,
         menu_divider(),
-        delete
+        clear_cues,
     ]
     .spacing(2);
 
@@ -693,69 +1080,219 @@ fn context_menu_panel<'a>(
         })
         .into();
 
-    if !show_group_submenu {
-        return main_panel;
-    }
-
-    let mut options = Column::new().spacing(2);
-    options = options.push(menu_item(
-        text("Ungroup").size(13).color(theme::TEXT_PRIMARY),
-        Message::from(crate::ui::slides::Message::SetSlideGroupLabel(
-            index,
-            String::new(),
-        )),
-        current.is_empty(),
-    ));
-    options = options.push(menu_divider());
-    for label in GROUPS {
-        let color = group_option_color(label);
-        let selected = current == label.to_lowercase();
-
-        let swatch = container(Space::new().width(14).height(14)).style(move |_: &iced::Theme| {
-            iced::widget::container::Style {
-                background: Some(IcedBackground::Color(color)),
-                border: Border {
-                    color: Color::WHITE,
-                    width: 1.0,
-                    radius: 2.0.into(),
-                },
-                ..Default::default()
-            }
-        });
-
+    if show_group_submenu {
+        let mut options = Column::new().spacing(2);
         options = options.push(menu_item(
-            row![
-                swatch,
-                Space::new().width(8),
-                text(*label).size(13).color(theme::TEXT_PRIMARY),
-            ]
-            .align_y(Alignment::Center),
+            text("Ungroup").size(13).color(theme::TEXT_PRIMARY),
             Message::from(crate::ui::slides::Message::SetSlideGroupLabel(
                 index,
-                (*label).to_string(),
+                String::new(),
             )),
-            selected,
+            current.is_empty(),
         ));
+        options = options.push(menu_divider());
+        for label in GROUPS {
+            let color = group_option_color(label);
+            let selected = current == label.to_lowercase();
+
+            let swatch =
+                container(Space::new().width(14).height(14)).style(move |_: &iced::Theme| {
+                    iced::widget::container::Style {
+                        background: Some(IcedBackground::Color(color)),
+                        border: Border {
+                            color: Color::WHITE,
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+
+            options = options.push(menu_item(
+                row![
+                    swatch,
+                    Space::new().width(8),
+                    text(*label).size(13).color(theme::TEXT_PRIMARY),
+                ]
+                .align_y(Alignment::Center),
+                Message::from(crate::ui::slides::Message::SetSlideGroupLabel(
+                    index,
+                    (*label).to_string(),
+                )),
+                selected,
+            ));
+        }
+
+        let group_panel: Element<'a, Message> = container(scrollable(options).height(420))
+            .width(210)
+            .padding([6, 6])
+            .style(move |_: &iced::Theme| iced::widget::container::Style {
+                background: Some(IcedBackground::Color(menu_bg)),
+                border: Border {
+                    color: theme::BORDER_STRONG,
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                shadow: menu_shadow,
+                ..Default::default()
+            })
+            .into();
+
+        return row![main_panel, Space::new().width(6), group_panel]
+            .align_y(Alignment::Start)
+            .into();
     }
 
-    let group_panel: Element<'a, Message> = container(scrollable(options).height(420))
-        .width(210)
-        .padding([6, 6])
-        .style(move |_: &iced::Theme| iced::widget::container::Style {
-            background: Some(IcedBackground::Color(menu_bg)),
-            border: Border {
-                color: theme::BORDER_STRONG,
-                width: 1.0,
-                radius: 6.0.into(),
-            },
-            shadow: menu_shadow,
-            ..Default::default()
-        })
-        .into();
+    if show_cue_submenu {
+        let cues_list: &[(&str, &str, crate::domain::Action)] = &[
+            (
+                "Clear All",
+                "circle-xmark",
+                crate::domain::Action::ClearOutput,
+            ),
+            ("Clear Slide", "ban", crate::domain::Action::ClearSlide),
+            (
+                "Clear Media",
+                "photo-film",
+                crate::domain::Action::ClearMedia,
+            ),
+            ("Clear Props", "gauge", crate::domain::Action::ClearProps),
+            (
+                "Clear Messages",
+                "bullhorn",
+                crate::domain::Action::ClearMessages,
+            ),
+            (
+                "Clear Audio",
+                "volume-xmark",
+                crate::domain::Action::ClearAudio,
+            ),
+            ("Start Timer", "play", crate::domain::Action::StartTimer),
+            ("Stop Timer", "pause", crate::domain::Action::StopTimer),
+            (
+                "Reset Timer",
+                "rotate-left",
+                crate::domain::Action::ResetTimer,
+            ),
+            (
+                "Default Look",
+                "sliders",
+                crate::domain::Action::ApplyLook("Default".to_string()),
+            ),
+        ];
 
-    row![main_panel, Space::new().width(6), group_panel]
-        .align_y(Alignment::Start)
-        .into()
+        let mut cue_items = Column::new().spacing(2);
+        for (name, icon, action) in cues_list {
+            cue_items = cue_items.push(menu_item(
+                row![
+                    fa_icon_solid(icon)
+                        .size(11.0_f32)
+                        .color(theme::TEXT_PRIMARY),
+                    Space::new().width(8),
+                    text(*name).size(12).color(theme::TEXT_PRIMARY),
+                ]
+                .align_y(Alignment::Center),
+                Message::AddSlideCue(index, crate::domain::Cue::new(*name, action.clone())),
+                false,
+            ));
+        }
+
+        let cue_panel: Element<'a, Message> = container(cue_items)
+            .width(170)
+            .padding([6, 6])
+            .style(move |_: &iced::Theme| iced::widget::container::Style {
+                background: Some(IcedBackground::Color(menu_bg)),
+                border: Border {
+                    color: theme::BORDER_STRONG,
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                shadow: menu_shadow,
+                ..Default::default()
+            })
+            .into();
+
+        return row![main_panel, Space::new().width(6), cue_panel]
+            .align_y(Alignment::Start)
+            .into();
+    }
+
+    if show_transition_submenu {
+        let is_cut = matches!(current_transition, Transition::Cut);
+        let is_fade_300 = matches!(current_transition, Transition::Fade { duration_ms: 300 });
+        let is_fade_500 = matches!(current_transition, Transition::Fade { duration_ms: 500 });
+        let is_fade_1000 = matches!(current_transition, Transition::Fade { duration_ms: 1000 });
+        let is_fade_2000 = matches!(current_transition, Transition::Fade { duration_ms: 2000 });
+
+        let transitions: &[(&str, Transition, bool)] = &[
+            ("Cut", Transition::Cut, is_cut),
+            (
+                "0.3s Dissolve",
+                Transition::Fade { duration_ms: 300 },
+                is_fade_300,
+            ),
+            (
+                "0.5s Dissolve",
+                Transition::Fade { duration_ms: 500 },
+                is_fade_500,
+            ),
+            (
+                "1.0s Dissolve",
+                Transition::Fade { duration_ms: 1000 },
+                is_fade_1000,
+            ),
+            (
+                "2.0s Dissolve",
+                Transition::Fade { duration_ms: 2000 },
+                is_fade_2000,
+            ),
+        ];
+
+        let mut trans_items = Column::new().spacing(2);
+        for (name, trans, selected) in transitions {
+            trans_items = trans_items.push(menu_item(
+                row![
+                    fa_icon_solid(if *selected {
+                        "check"
+                    } else {
+                        "wand-magic-sparkles"
+                    })
+                    .size(11.0_f32)
+                    .color(if *selected {
+                        theme::ACCENT_BLUE
+                    } else {
+                        theme::TEXT_MUTED
+                    }),
+                    Space::new().width(8),
+                    text(*name).size(12).color(theme::TEXT_PRIMARY),
+                ]
+                .align_y(Alignment::Center),
+                Message::SetSlideTransition(index, *trans),
+                *selected,
+            ));
+        }
+
+        let trans_panel: Element<'a, Message> = container(trans_items)
+            .width(170)
+            .padding([6, 6])
+            .style(move |_: &iced::Theme| iced::widget::container::Style {
+                background: Some(IcedBackground::Color(menu_bg)),
+                border: Border {
+                    color: theme::BORDER_STRONG,
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                shadow: menu_shadow,
+                ..Default::default()
+            })
+            .into();
+
+        return row![main_panel, Space::new().width(6), trans_panel]
+            .align_y(Alignment::Start)
+            .into();
+    }
+
+    main_panel
 }
 
 pub fn media_bin_workspace<'a>(

@@ -1,9 +1,9 @@
-//! Playlist (ProPresenter "Playlist") use-cases.
+//! Playlist use-cases.
 //!
 //! A playlist is an ordered set of items (presentations, songs, media cues,
-//! headers, blanks) used to plan a service. The backing repository is still
+//! headers, blanks) used to plan a service. The backing repository is
 //! named `PlaylistRepository` and stores rows in `service_plans` /
-//! `service_items` for backwards compatibility.
+//! `service_items`.
 
 use crate::Result;
 use crate::db::PlaylistRepository;
@@ -43,6 +43,16 @@ impl PlaylistService {
     pub fn set_items(&self, playlist: &mut Playlist, items: Vec<PlaylistItem>) -> Result<()> {
         playlist.items = items;
         self.repo.save_items(&playlist.id, &playlist.items)
+    }
+
+    /// Duplicate a playlist by ID, creating a new playlist with "(Copy)" suffix
+    /// and copying all of its items.
+    pub fn duplicate(&self, id: &str) -> Result<Playlist> {
+        let plan = self.get(id)?;
+        let mut new_plan = Playlist::new(format!("{} (Copy)", plan.name));
+        new_plan.items = plan.items.clone();
+        self.save(&new_plan)?;
+        self.get(&new_plan.id)
     }
 }
 
@@ -85,5 +95,17 @@ mod tests {
         assert_eq!(s.list().unwrap().len(), 1);
         s.delete(&plan.id).unwrap();
         assert!(s.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn duplicate_copies_items_and_name() {
+        let s = svc();
+        let mut plan = Playlist::new("Sunday Service".into());
+        plan.items.push(PlaylistItem::Blank);
+        s.save(&plan).unwrap();
+        let dup = s.duplicate(&plan.id).unwrap();
+        assert_eq!(dup.name, "Sunday Service (Copy)");
+        assert_eq!(dup.items.len(), 1);
+        assert_ne!(dup.id, plan.id);
     }
 }
