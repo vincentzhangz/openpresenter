@@ -64,7 +64,7 @@ impl TriggerManager {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
         let handle = tokio::spawn(async move {
             if let Err(e) = http::run_server(port, sender, shutdown_rx).await {
-                eprintln!("[triggers/http] server error: {e}");
+                log::error!("[triggers/http] server error: {e}");
             }
         });
         self.http_handle = Some(handle);
@@ -90,7 +90,7 @@ impl TriggerManager {
         let port = self.osc_port;
         let handle = tokio::spawn(async move {
             if let Err(e) = osc::run_listener(port, sender).await {
-                eprintln!("[triggers/osc] listener error: {e}");
+                log::error!("[triggers/osc] listener error: {e}");
             }
         });
         self.osc_handle = Some(handle);

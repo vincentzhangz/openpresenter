@@ -4,6 +4,7 @@ use crate::domain::{
     BibleImportFile, BibleTranslation, BibleVerse, LibraryAsset, Playlist, PlaylistItem,
     Presentation, Slide, SlideTheme, Song, Verse,
 };
+use anyhow::anyhow;
 use chrono::Utc;
 use rusqlite::params;
 use std::sync::Arc;
@@ -42,8 +43,8 @@ impl PresentationRepository {
                 })
             })?;
             let mut presentations = rows
-                .filter_map(|r| r.map_err(|e| eprintln!("presentation row error: {e}")).ok())
-                .collect::<Vec<Presentation>>();
+                .collect::<rusqlite::Result<Vec<Presentation>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
 
             // Load the full slides for each presentation so list rows reflect
             // the real slide count (and contents) without a second fetch.
@@ -58,8 +59,8 @@ impl PresentationRepository {
                         serde_json::from_str::<Slide>(&data)
                             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
                     })?
-                    .filter_map(|r| r.map_err(|e| eprintln!("slide row error: {e}")).ok())
-                    .collect();
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             }
             Ok(presentations)
         })
@@ -90,8 +91,8 @@ impl PresentationRepository {
                     serde_json::from_str::<Slide>(&data)
                         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("slide row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(presentation)
         })
     }
@@ -278,8 +279,8 @@ impl LibraryRepository {
                         created_at: ts_to_utc(ts),
                     })
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("asset row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(assets)
         })
     }
@@ -340,8 +341,8 @@ impl ThemeRepository {
                     theme.created_at = ts_to_utc(ts);
                     Ok(theme)
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("theme row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(themes)
         })
     }
@@ -402,8 +403,8 @@ impl SongRepository {
                         updated_at: ts_to_utc(row.get(8)?),
                     })
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("song row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(songs)
         })
     }
@@ -436,8 +437,8 @@ impl SongRepository {
                         updated_at: ts_to_utc(row.get(8)?),
                     })
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("song search row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(songs)
         })
     }
@@ -475,8 +476,8 @@ impl SongRepository {
                         order_index: row.get::<_, i64>(3)? as usize,
                     })
                 })?
-                .filter_map(|r| r.map_err(|e| eprintln!("verse row error: {e}")).ok())
-                .collect();
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| anyhow!("row deserialization failed: {e}"))?;
             Ok(song)
         })
     }
@@ -593,14 +594,13 @@ impl PlaylistRepository {
             let raw: Vec<String> = stmt
                 .query_map(params![id], |row| row.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            // A malformed item must not silently vanish from a service plan.
             plan.items = raw
                 .iter()
-                .filter_map(|s| {
-                    serde_json::from_str(s)
-                        .map_err(|e| eprintln!("service item json error: {e}"))
-                        .ok()
+                .map(|s| {
+                    serde_json::from_str(s).map_err(|e| anyhow!("playlist item json error: {e}"))
                 })
-                .collect();
+                .collect::<Result<Vec<PlaylistItem>>>()?;
             Ok(plan)
         })
     }

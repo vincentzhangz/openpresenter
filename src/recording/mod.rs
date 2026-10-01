@@ -71,11 +71,16 @@ impl RecordingSession {
             }
             Err(mpsc::TrySendError::Full(_)) => {
                 self.frames_dropped += 1;
-                eprintln!(
-                    "[recording] encoder queue full — dropped frame #{} (total dropped: {})",
-                    self.frames_submitted + self.frames_dropped,
-                    self.frames_dropped
-                );
+                // Log the first drop, then only every 30th: this fires per frame
+                // and would otherwise flood the log on a long recording. The
+                // running total is surfaced in the recording panel regardless.
+                if self.frames_dropped == 1 || self.frames_dropped.is_multiple_of(30) {
+                    log::warn!(
+                        "[recording] encoder queue full — dropped frame #{} (total dropped: {})",
+                        self.frames_submitted + self.frames_dropped,
+                        self.frames_dropped
+                    );
+                }
                 false
             }
             Err(mpsc::TrySendError::Disconnected(_)) => false,

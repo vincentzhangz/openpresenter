@@ -22,7 +22,7 @@ pub async fn run_listener(port: u16, tx: tokio::sync::mpsc::Sender<Action>) -> a
                     }
                 }
             }
-            Err(e) => eprintln!("[osc] decode error: {e}"),
+            Err(e) => log::warn!("[osc] decode error: {e}"),
         }
     }
 }

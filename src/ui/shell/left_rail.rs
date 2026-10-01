@@ -1,5 +1,7 @@
 use crate::domain::Presentation;
-use crate::ui::components::{add_button, search_input, section_header};
+use crate::ui::components::{
+    add_button, global_search_id, search_input_with_id, section_header, truncate,
+};
 use crate::ui::library;
 use crate::ui::main_window::MainWindow;
 use crate::ui::messages::{Message, RailContextTarget, SidebarTab};
@@ -17,14 +19,36 @@ pub const RAIL_WIDTH: f32 = 260.0;
 /// Left rail: collapsible outline of libraries + playlists,
 /// with a detail list underneath.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, Message> {
+    // The global search field lives at the very top of the rail so it is
+    // reachable from every mode (including Edit, where the rail otherwise shows
+    // the slide list) and from the navbar's Search button.
+    let search = search_input_with_id(
+        "Search…",
+        &w.shell.search_query,
+        Message::SearchQueryChanged,
+        global_search_id(),
+    );
+
     if w.shell.current_mode == crate::ui::messages::ViewMode::Edit
         && let Some(ref pres) = w.editor.editing
     {
-        return crate::ui::editor::slide_list::slide_list(
-            pres,
-            w.editor.selected_slide_index,
-            w.layer.selected_index,
-        );
+        // While a search query is active, show matching presentations instead of
+        // the slide list so typing always produces visible results.
+        let body: Element<'a, Message> = if w.shell.search_query.trim().is_empty() {
+            crate::ui::editor::slide_list::slide_list(
+                pres,
+                w.editor.selected_slide_index,
+                w.layer.selected_index,
+            )
+        } else {
+            search_results(w)
+        };
+
+        return container(column![search, body].spacing(0))
+            .width(RAIL_WIDTH)
+            .height(Length::Fill)
+            .style(theme::panel_style)
+            .into();
     }
 
     let tab = w.shell.sidebar_tab;
@@ -44,9 +68,16 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, Message> {
             col.push(section_item(*st, icon, label, tab == *st))
         });
 
-    let detail = detail_pane(w, tab);
+    // An active query replaces whatever tab detail is shown below the section
+    // buttons — in every mode, not just Edit — so typing always produces
+    // visible results.
+    let detail: Element<'a, Message> = if w.shell.search_query.trim().is_empty() {
+        detail_pane(w, tab)
+    } else {
+        search_results(w)
+    };
 
-    let content = column![section_buttons, divider(), detail]
+    let content = column![search, section_buttons, divider(), detail]
         .width(RAIL_WIDTH)
         .height(Length::Fill);
 
@@ -88,6 +119,184 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, Message> {
     } else {
         tracked_base
     }
+}
+
+/// Global search results for the current query: matching presentations, matching
+/// slides inside them, and matching songs — grouped under one scrollable list.
+fn search_results<'a>(w: &'a MainWindow) -> Element<'a, Message> {
+    let q = w.shell.search_query.trim().to_lowercase();
+
+    let pres_matches: Vec<&Presentation> = w
+        .editor
+        .presentations
+        .iter()
+        .filter(|p| p.name.to_lowercase().contains(&q))
+        .collect();
+
+    // (presentation name, slide index, matching text snippet)
+    let mut slide_matches: Vec<(String, usize, String)> = Vec::new();
+    for p in &w.editor.presentations {
+        for (i, s) in p.slides.iter().enumerate() {
+            let snippet = slide_search_text(s);
+            if snippet.to_lowercase().contains(&q) {
+                slide_matches.push((p.name.clone(), i, truncate(&snippet, 48)));
+            }
+        }
+    }
+
+    let song_matches: Vec<&crate::domain::Song> = w
+        .song
+        .songs
+        .iter()
+        .filter(|s| {
+            let hay =
+                format!("{} {}", s.title, s.artist.as_deref().unwrap_or_default()).to_lowercase();
+            hay.contains(&q)
+        })
+        .collect();
+
+    let active_id = w
+        .presenting
+        .presentation
+        .as_ref()
+        .or(w.editor.editing.as_ref())
+        .map(|p| p.id.as_str());
+
+    let total = pres_matches.len() + slide_matches.len() + song_matches.len();
+    let mut list = Column::new().spacing(2).padding([4, 6]);
+
+    if total == 0 {
+        list = list.push(crate::ui::components::empty_state("No results"));
+    }
+
+    if !pres_matches.is_empty() {
+        list = list.push(section_header("PRESENTATIONS"));
+        for pres in &pres_matches {
+            list = list.push(presentation_row(
+                pres,
+                active_id.map(|id| id == pres.id).unwrap_or(false),
+            ));
+        }
+    }
+
+    if !slide_matches.is_empty() {
+        list = list.push(section_header("SLIDES"));
+        for (pres_name, index, snippet) in slide_matches {
+            list = list.push(slide_result_row(pres_name, index, snippet));
+        }
+    }
+
+    if !song_matches.is_empty() {
+        list = list.push(section_header("SONGS"));
+        for song in song_matches {
+            list = list.push(song_result_row(song));
+        }
+    }
+
+    let header = container(
+        row![
+            text(format!("RESULTS ({total})"))
+                .size(10)
+                .color(theme::TEXT_MUTED),
+            Space::new().width(Length::Fill),
+        ]
+        .padding([10, 14])
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .style(theme::section_header_style);
+
+    column![header, scrollable(list).height(Length::Fill),]
+        .width(Length::Fill)
+        .into()
+}
+
+/// Concatenated searchable text of a slide: its text objects plus its notes.
+fn slide_search_text(slide: &crate::domain::Slide) -> String {
+    let mut parts: Vec<String> = slide
+        .effective_layers()
+        .iter()
+        .filter_map(|o| match &o.content {
+            crate::domain::ObjectContent::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    if let Some(notes) = &slide.notes {
+        parts.push(notes.clone());
+    }
+    parts.join(" ")
+}
+
+/// One matching slide: `presentation name › N  snippet`, opening that slide.
+fn slide_result_row(pres_name: String, index: usize, snippet: String) -> Element<'static, Message> {
+    let heading = format!("{} › {}", truncate(&pres_name, 22), index + 1);
+    let inner = column![
+        text(heading).size(12).color(theme::TEXT_PRIMARY),
+        text(snippet).size(10).color(theme::TEXT_MUTED),
+    ]
+    .spacing(2)
+    .padding([6, 10]);
+
+    button(inner)
+        .on_press(Message::SearchResultSlide(pres_name, index))
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme, status| {
+            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
+                theme::BG_HOVER
+            } else {
+                theme::TRANSPARENT
+            };
+            iced::widget::button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    color: theme::BORDER_PANEL,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into()
+}
+
+/// One matching song, opening it in the song editor.
+fn song_result_row(song: &crate::domain::Song) -> Element<'static, Message> {
+    let title = song.title.clone();
+    let artist = song.artist.clone().unwrap_or_default();
+    let subtitle = if artist.trim().is_empty() {
+        "—".to_string()
+    } else {
+        truncate(&artist, 28)
+    };
+    let inner = column![
+        text(title).size(12).color(theme::TEXT_PRIMARY),
+        text(subtitle).size(10).color(theme::TEXT_MUTED),
+    ]
+    .spacing(2)
+    .padding([6, 10]);
+
+    button(inner)
+        .on_press(Message::Songs(crate::ui::songs::Message::Open(
+            song.id.clone(),
+        )))
+        .width(Length::Fill)
+        .style(move |_t: &iced::Theme, status| {
+            let bg = if matches!(status, iced::widget::button::Status::Hovered) {
+                theme::BG_HOVER
+            } else {
+                theme::TRANSPARENT
+            };
+            iced::widget::button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    color: theme::BORDER_PANEL,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into()
 }
 
 fn section_item(
@@ -163,11 +372,6 @@ fn detail_pane<'a>(w: &'a MainWindow, tab: SidebarTab) -> Element<'a, Message> {
 
 fn presentations_detail<'a>(w: &'a MainWindow) -> Element<'a, Message> {
     let header = section_header("PRESENTATIONS");
-    let search = search_input(
-        "Search…",
-        &w.shell.search_query,
-        Message::SearchQueryChanged,
-    );
 
     let active_id = w
         .presenting
@@ -240,7 +444,6 @@ fn presentations_detail<'a>(w: &'a MainWindow) -> Element<'a, Message> {
 
     column![
         header,
-        search,
         scrollable(list).height(Length::Fill),
         actions,
         new_btn,

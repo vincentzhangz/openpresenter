@@ -112,7 +112,7 @@ pub(crate) fn set_startup_mode(w: &mut MainWindow, mode: ViewMode) -> Task<RootM
         ViewMode::Show => "show".to_string(),
         ViewMode::Edit => "edit".to_string(),
     };
-    let _ = w.app_config.save();
+    w.save_config();
     w.output.settings_status_message = Some("Startup mode updated".to_string());
     Task::none()
 }
@@ -124,7 +124,7 @@ pub(crate) fn browse_db_path(w: &mut MainWindow) -> Task<RootMessage> {
         .pick_file();
     if let Some(path) = dest {
         w.app_config.db_path = path;
-        let _ = w.app_config.save();
+        w.save_config();
         w.output.settings_status_message = Some("Database location updated".to_string());
     }
     Task::none()
@@ -164,13 +164,13 @@ pub(crate) fn reveal_db_path(w: &mut MainWindow) -> Task<RootMessage> {
 
 pub(crate) fn ndi_source_name_changed(w: &mut MainWindow, name: String) -> Task<RootMessage> {
     w.app_config.ndi.source_name = name;
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
 pub(crate) fn ndi_frame_rate_changed(w: &mut MainWindow, fps: u32) -> Task<RootMessage> {
     w.app_config.ndi.frame_rate = fps;
-    let _ = w.app_config.save();
+    w.save_config();
     w.output.settings_status_message = Some(format!("NDI frame rate set to {fps} FPS"));
     Task::none()
 }
@@ -178,7 +178,7 @@ pub(crate) fn ndi_frame_rate_changed(w: &mut MainWindow, fps: u32) -> Task<RootM
 pub(crate) fn http_port_changed(w: &mut MainWindow, port_str: String) -> Task<RootMessage> {
     if let Ok(p) = port_str.trim().parse::<u16>() {
         w.app_config.triggers.http_port = p;
-        let _ = w.app_config.save();
+        w.save_config();
         w.output.settings_status_message = Some(format!("HTTP trigger port set to {p}"));
     }
     Task::none()
@@ -187,7 +187,7 @@ pub(crate) fn http_port_changed(w: &mut MainWindow, port_str: String) -> Task<Ro
 pub(crate) fn osc_port_changed(w: &mut MainWindow, port_str: String) -> Task<RootMessage> {
     if let Ok(p) = port_str.trim().parse::<u16>() {
         w.app_config.triggers.osc_port = p;
-        let _ = w.app_config.save();
+        w.save_config();
         w.output.settings_status_message = Some(format!("OSC listener port set to {p}"));
     }
     Task::none()
@@ -209,7 +209,7 @@ pub(crate) fn set_global_transition_type(
         Transition::Flip { .. } => "flip".to_string(),
         Transition::Clock { .. } => "clock".to_string(),
     };
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
@@ -220,14 +220,14 @@ pub(crate) fn set_global_transition_duration(
     let dur = duration_ms.clamp(50, 5000);
     w.app_config.transitions.default_duration_ms = dur;
     w.presenting.global_transition = w.presenting.global_transition.with_duration(dur);
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
 pub(crate) fn toggle_reduce_motion(w: &mut MainWindow, enabled: bool) -> Task<RootMessage> {
     w.ui.reduce_motion = enabled;
     w.app_config.ui.reduce_motion = enabled;
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
@@ -235,7 +235,7 @@ pub(crate) fn set_default_grid_cols(w: &mut MainWindow, cols: usize) -> Task<Roo
     let c = cols.clamp(2, 6);
     w.presenting.slide_grid_cols = c;
     w.app_config.ui.default_grid_cols = c;
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
@@ -249,7 +249,7 @@ pub(crate) fn save_config(w: &mut MainWindow) -> Task<RootMessage> {
 
 pub(crate) fn reset_to_defaults(w: &mut MainWindow) -> Task<RootMessage> {
     w.app_config = crate::config::Config::default();
-    let _ = w.app_config.save();
+    w.save_config();
     w.output.screen_x = w.app_config.output.screen_x.to_string();
     w.output.screen_y = w.app_config.output.screen_y.to_string();
     w.ui.reduce_motion = false;
@@ -270,22 +270,21 @@ pub(crate) fn refresh_displays(w: &mut MainWindow) -> Task<RootMessage> {
 
 pub(crate) fn apply_detected_display(w: &mut MainWindow, idx: usize) -> Task<RootMessage> {
     if let Some(disp) = w.output.detected_displays.get(idx) {
-        w.output.screen_x = disp.x.to_string();
-        w.output.screen_y = disp.y.to_string();
-        w.app_config.output.screen_x = disp.x as f32;
-        w.app_config.output.screen_y = disp.y as f32;
-        let _ = w.app_config.save();
+        let (name, x, y, dw, dh) = (disp.name.clone(), disp.x, disp.y, disp.width, disp.height);
+        w.output.screen_x = x.to_string();
+        w.output.screen_y = y.to_string();
+        w.app_config.output.screen_x = x as f32;
+        w.app_config.output.screen_y = y as f32;
+        // Remember which display the output is routed to so reopening the
+        // output window (this session or after a restart) resolves its
+        // position from the current display layout rather than a stale X/Y.
+        w.app_config.output.display_index = Some(idx);
 
-        w.output
-            .manager
-            .set_resolution("audience", disp.width, disp.height);
-        w.output
-            .manager
-            .set_resolution("main", disp.width, disp.height);
-        w.output.settings_status_message = Some(format!(
-            "Applied display '{}' ({}×{} at {},{})",
-            disp.name, disp.width, disp.height, disp.x, disp.y
-        ));
+        w.output.manager.set_resolution("audience", dw, dh);
+        w.output.manager.set_resolution("main", dw, dh);
+        w.save_config();
+        let status = format!("Applied display '{}' ({}×{} at {},{})", name, dw, dh, x, y);
+        w.output.settings_status_message = Some(status);
     }
     Task::none()
 }
@@ -371,22 +370,32 @@ pub(crate) fn toggle_ndi(w: &mut MainWindow) -> Task<RootMessage> {
         if let Some(ndi) = w.presenting.ndi_output.take() {
             ndi.stop();
         }
-    } else {
-        match NdiOutputLoop::start("OpenPresenter", 1920, 1080, FrameRate::FPS_30) {
-            Ok(ndi) => {
-                let slide = w
-                    .presenting
-                    .presentation
-                    .as_ref()
-                    .and_then(|p| p.slides.get(w.presenting.slide_index))
-                    .cloned();
-                if let Some(s) = slide {
-                    ndi.set_slide(s);
-                }
-                w.presenting.ndi_output = Some(ndi);
+        return Task::none();
+    }
+    // Without the NDI SDK runtime the send path is a no-op; never start it, or
+    // the operator would believe the program is being distributed while
+    // nothing leaves the machine.
+    if !crate::ndi::is_available() {
+        w.set_error(
+            "NDI output unavailable: install the NDI SDK runtime and use an \
+             NDI-enabled build of OpenPresenter",
+        );
+        return Task::none();
+    }
+    match NdiOutputLoop::start("OpenPresenter", 1920, 1080, FrameRate::FPS_30) {
+        Ok(ndi) => {
+            let slide = w
+                .presenting
+                .presentation
+                .as_ref()
+                .and_then(|p| p.slides.get(w.presenting.slide_index))
+                .cloned();
+            if let Some(s) = slide {
+                ndi.set_slide(s);
             }
-            Err(e) => w.set_error(format!("Failed to start NDI: {e}")),
+            w.presenting.ndi_output = Some(ndi);
         }
+        Err(e) => w.set_error(format!("Failed to start NDI: {e}")),
     }
     Task::none()
 }
@@ -413,7 +422,14 @@ pub(crate) fn open_output_window(w: &mut MainWindow) -> Task<RootMessage> {
         return window::gain_focus(id);
     }
     let cfg = &w.app_config.output;
-    let pos = if cfg.screen_x != 0.0 || cfg.screen_y != 0.0 {
+    // A stored display index wins: resolve the current origin of that display
+    // so the output lands on the right monitor even if its coordinates changed
+    // since it was chosen. Otherwise fall back to the saved X/Y offsets.
+    let pos = if let Some(idx) = cfg.display_index
+        && let Some(disp) = w.output.detected_displays.get(idx)
+    {
+        window::Position::Specific(iced::Point::new(disp.x as f32, disp.y as f32))
+    } else if cfg.screen_x != 0.0 || cfg.screen_y != 0.0 {
         window::Position::Specific(iced::Point::new(cfg.screen_x, cfg.screen_y))
     } else {
         window::Position::Default
@@ -478,7 +494,7 @@ pub(crate) fn toggle_output_settings(w: &mut MainWindow) -> Task<RootMessage> {
 pub(crate) fn output_screen_x_changed(w: &mut MainWindow, v: String) -> Task<RootMessage> {
     if let Ok(x) = v.parse::<f32>() {
         w.app_config.output.screen_x = x;
-        let _ = w.app_config.save();
+        w.save_config();
     }
     w.output.screen_x = v;
     Task::none()
@@ -487,7 +503,7 @@ pub(crate) fn output_screen_x_changed(w: &mut MainWindow, v: String) -> Task<Roo
 pub(crate) fn output_screen_y_changed(w: &mut MainWindow, v: String) -> Task<RootMessage> {
     if let Ok(y) = v.parse::<f32>() {
         w.app_config.output.screen_y = y;
-        let _ = w.app_config.save();
+        w.save_config();
     }
     w.output.screen_y = v;
     Task::none()
@@ -498,7 +514,7 @@ pub(crate) fn output_auto_fullscreen_toggled(
     enabled: bool,
 ) -> Task<RootMessage> {
     w.app_config.output.auto_fullscreen = enabled;
-    let _ = w.app_config.save();
+    w.save_config();
     Task::none()
 }
 
@@ -508,6 +524,11 @@ pub(crate) fn window_closed(w: &mut MainWindow, id: window::Id) -> Task<RootMess
         w.output.black_screen = false;
         w.output.is_fullscreen = false;
         return window::close(id);
+    }
+    if Some(id) == w.presenting.stage_window_id {
+        // The speaker closed the stage window itself; just drop the handle.
+        w.presenting.stage_window_id = None;
+        return Task::none();
     }
     if Some(id) == w.editor.delete_confirm_window_id {
         w.editor.delete_confirm_window_id = None;

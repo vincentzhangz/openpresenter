@@ -116,6 +116,13 @@ impl Default for LayerState {
     }
 }
 
+/// One track waiting in the audio queue.
+#[derive(Debug, Clone)]
+pub(crate) struct QueueTrack {
+    pub(crate) path: String,
+    pub(crate) name: String,
+}
+
 pub(crate) struct AudioState {
     pub(crate) player: Option<AudioPlayer>,
     pub(crate) path: String,
@@ -124,6 +131,15 @@ pub(crate) struct AudioState {
     pub(crate) volume: f32,
     pub(crate) looping: bool,
     pub(crate) panel_visible: bool,
+    /// Tracks waiting to play after the current one ends.
+    pub(crate) queue: Vec<QueueTrack>,
+    /// Index into `queue` of the track currently loaded, if playback is
+    /// queue-driven. `None` while a manually opened track plays.
+    pub(crate) queue_index: Option<usize>,
+    /// Playback-position snapshots for the transport readout, updated by the
+    /// audio tick (only running while a track plays).
+    pub(crate) position_secs: u64,
+    pub(crate) duration_secs: u64,
 }
 
 impl Default for AudioState {
@@ -136,6 +152,10 @@ impl Default for AudioState {
             volume: 0.8,
             looping: false,
             panel_visible: false,
+            queue: Vec::new(),
+            queue_index: None,
+            position_secs: 0,
+            duration_secs: 0,
         }
     }
 }
@@ -330,6 +350,13 @@ pub(crate) struct PresentingState {
     pub(crate) timer_secs: u64,
     pub(crate) timer_running: bool,
     pub(crate) timer_start_epoch: u64,
+    /// Target wall-clock time (unix seconds) the stage countdown is racing
+    /// toward, if one is armed. Remaining time is derived from the real clock,
+    /// so it survives ticks and pauses of other subsystems.
+    pub(crate) countdown_end_epoch: Option<u64>,
+    /// Dedicated stage-display window (a second OS window the speaker can drag
+    /// to another monitor), distinct from the in-app stage view swap.
+    pub(crate) stage_window_id: Option<iced::window::Id>,
     pub(crate) ndi_output: Option<NdiOutputLoop>,
 
     // Decoupled multi-layer engine state:
@@ -357,6 +384,8 @@ impl Default for PresentingState {
             timer_secs: 0,
             timer_running: false,
             timer_start_epoch: 0,
+            countdown_end_epoch: None,
+            stage_window_id: None,
             ndi_output: None,
             slide_layer_active: true,
             media_layer_active: true,
@@ -445,10 +474,4 @@ pub(crate) struct UiState {
     pub(crate) shortcuts_window_id: Option<iced::window::Id>,
     pub(crate) reduce_motion: bool,
     pub(crate) error_message: Option<String>,
-}
-
-/// Package (.opp) and lyrics import/export panel state.
-#[derive(Default)]
-pub(crate) struct ImportExportState {
-    pub(crate) panel_open: bool,
 }

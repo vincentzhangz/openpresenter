@@ -4,11 +4,8 @@ use iced::Task;
 
 /// Messages owned by the Import/Export feature module.
 ///
-/// `ToggleImportExportPanel` stays as a root variant (global panel visibility
-/// toggle, consistent with the other `*Panel` toggles).
-///
-/// NOTE: the import/export panel UI is not yet implemented; only the action
-/// messages and their handlers exist.
+/// Import/export is reached from the left-rail library menu, which emits these
+/// messages directly; there is no dedicated panel.
 #[derive(Debug, Clone)]
 pub enum Message {
     ExportOpp,
@@ -45,7 +42,7 @@ pub(crate) fn export_opp(w: &mut MainWindow) -> Task<RootMessage> {
 
     if let Some(path) = dest {
         match crate::import::opp::export(&pres, &path) {
-            Ok(n) => println!("[export .opp] wrote {n} media files to {}", path.display()),
+            Ok(n) => log::info!("[export .opp] wrote {n} media files to {}", path.display()),
             Err(e) => w.set_error(format!("[export .opp] error: {e}")),
         }
     }
@@ -69,7 +66,7 @@ pub(crate) fn export_presentation_by_id(w: &mut MainWindow, id: &str) -> Task<Ro
 
     if let Some(path) = dest {
         match crate::import::opp::export(&pres, &path) {
-            Ok(n) => println!("[export .opp] wrote {n} media files to {}", path.display()),
+            Ok(n) => log::info!("[export .opp] wrote {n} media files to {}", path.display()),
             Err(e) => w.set_error(format!("[export .opp] error: {e}")),
         }
     }
@@ -156,10 +153,5 @@ pub(crate) fn export_openlyrics(w: &mut MainWindow) -> Task<RootMessage> {
     {
         w.set_error(format!("[export OpenLyrics] error: {e}"));
     }
-    Task::none()
-}
-
-pub(crate) fn toggle_panel(w: &mut MainWindow) -> Task<RootMessage> {
-    w.import_export.panel_open = !w.import_export.panel_open;
     Task::none()
 }

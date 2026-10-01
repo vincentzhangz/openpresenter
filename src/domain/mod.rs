@@ -457,6 +457,38 @@ impl Transition {
             },
         }
     }
+
+    /// Rebuild a transition from the string persisted in settings
+    /// (`TransitionConfig::default_type`, written by the output settings tab),
+    /// applying `duration_ms`. Unknown strings fall back to a fade so a
+    /// hand-edited config can never produce a transition the renderer rejects.
+    pub fn from_config_str(s: &str, duration_ms: u64) -> Self {
+        match s {
+            "cut" => Transition::Cut,
+            "slide" => Transition::Slide { duration_ms },
+            "dissolve" => Transition::Dissolve { duration_ms },
+            "zoom" => Transition::Zoom { duration_ms },
+            "flip" => Transition::Flip { duration_ms },
+            "clock" => Transition::Clock { duration_ms },
+            "push_0" => Transition::Push {
+                duration_ms,
+                direction: 0,
+            },
+            "push_1" => Transition::Push {
+                duration_ms,
+                direction: 1,
+            },
+            "wipe_0" => Transition::Wipe {
+                duration_ms,
+                angle_deg: 0,
+            },
+            "wipe_180" => Transition::Wipe {
+                duration_ms,
+                angle_deg: 180,
+            },
+            _ => Transition::Fade { duration_ms },
+        }
+    }
 }
 
 impl Default for TextStyle {
@@ -801,6 +833,42 @@ pub struct BibleImportFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transition_from_config_str_roundtrips_settings_names() {
+        // The strings are the ones written by the output settings tab.
+        assert_eq!(
+            Transition::from_config_str("fade", 400),
+            Transition::Fade { duration_ms: 400 }
+        );
+        assert_eq!(Transition::from_config_str("cut", 400), Transition::Cut);
+        assert_eq!(
+            Transition::from_config_str("push_1", 400),
+            Transition::Push {
+                duration_ms: 400,
+                direction: 1
+            }
+        );
+        assert_eq!(
+            Transition::from_config_str("wipe_180", 400),
+            Transition::Wipe {
+                duration_ms: 400,
+                angle_deg: 180
+            }
+        );
+        assert_eq!(
+            Transition::from_config_str("zoom", 250),
+            Transition::Zoom { duration_ms: 250 }
+        );
+    }
+
+    #[test]
+    fn transition_from_config_str_unknown_falls_back_to_fade() {
+        assert_eq!(
+            Transition::from_config_str("sparkle", 500),
+            Transition::Fade { duration_ms: 500 }
+        );
+    }
 
     #[test]
     fn text_transform_none_is_identity() {

@@ -6,13 +6,16 @@ use std::time::Instant;
 fn main() -> Result<()> {
     let startup = Instant::now();
 
+    // Without this every log::error!/warn! in the app writes to nowhere.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     openpresenter::ndi::initialize()?;
 
     let app = App::new()?;
-    println!("✓ Database initialized at: {:?}", app.db().path());
+    log::info!("database initialized at {:?}", app.db().path());
 
     let db = Arc::new(app.into_db());
-    println!("✓ App initialized in {}ms", startup.elapsed().as_millis());
+    log::info!("app initialized in {}ms", startup.elapsed().as_millis());
 
     let db_clone = db.clone();
     iced::daemon(

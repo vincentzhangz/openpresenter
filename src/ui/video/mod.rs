@@ -36,6 +36,17 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
 
 pub(crate) fn video_frame_tick(w: &mut MainWindow) -> Task<RootMessage> {
     if let Some(ref player) = w.video.player {
+        // Surface fatal decode failures instead of letting the last frame
+        // silently freeze on the output.
+        if let Some(e) = player.take_decode_error() {
+            player.stop();
+            w.video.player = None;
+            w.video.frame = None;
+            w.set_error(format!("Video playback stopped: {e}"));
+        }
+    }
+
+    if let Some(ref player) = w.video.player {
         if let Some(frame) = player.current_frame() {
             let handle = ImageHandle::from_rgba(frame.width, frame.height, frame.data);
             w.video.frame = Some(handle);
@@ -66,6 +77,9 @@ pub(crate) fn open_video(w: &mut MainWindow, path: &str) {
             player.play();
             if let Some(ref ndi) = w.presenting.ndi_output {
                 ndi.set_video_frame_source(Some(player.video.shared_frame_arc()));
+            }
+            if let Some(e) = player.take_audio_error() {
+                w.set_error(format!("MediaPlayer: {e}"));
             }
             w.video.player = Some(player);
         }

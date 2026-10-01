@@ -17,9 +17,13 @@ pub enum Message {
     HttpStart,
     HttpStop,
     HttpPortChanged(String),
+    /// Toggle whether the HTTP listener starts automatically at launch.
+    HttpAutoStartToggled(bool),
     OscStart,
     OscStop,
     OscPortChanged(String),
+    /// Toggle whether the OSC listener starts automatically at launch.
+    OscAutoStartToggled(bool),
     MacroAdd,
     MacroRemove(String),
     MacroRun(String),
@@ -38,7 +42,11 @@ fn wrap(msg: Message) -> RootMessage {
 
 /// Render the triggers panel.
 pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
-    triggers_panel(&w.triggers)
+    triggers_panel(
+        &w.triggers,
+        w.app_config.triggers.http_enabled,
+        w.app_config.triggers.osc_enabled,
+    )
 }
 
 /// Dispatch a triggers message.
@@ -47,9 +55,11 @@ pub fn update(w: &mut MainWindow, msg: Message) -> Task<RootMessage> {
         Message::HttpStart => http_start(w),
         Message::HttpStop => http_stop(w),
         Message::HttpPortChanged(s) => http_port_changed(w, s),
+        Message::HttpAutoStartToggled(v) => http_autostart_toggled(w, v),
         Message::OscStart => osc_start(w),
         Message::OscStop => osc_stop(w),
         Message::OscPortChanged(s) => osc_port_changed(w, s),
+        Message::OscAutoStartToggled(v) => osc_autostart_toggled(w, v),
         Message::MacroAdd => macro_add(w),
         Message::MacroRemove(id) => macro_remove(w, id),
         Message::MacroRun(id) => macro_run(w, id),
@@ -86,6 +96,11 @@ pub(crate) fn http_port_changed(w: &mut MainWindow, s: String) -> Task<RootMessa
     Task::none()
 }
 
+pub(crate) fn http_autostart_toggled(w: &mut MainWindow, v: bool) -> Task<RootMessage> {
+    w.app_config.triggers.http_enabled = v;
+    crate::ui::output::save_config(w)
+}
+
 pub(crate) fn osc_start(w: &mut MainWindow) -> Task<RootMessage> {
     if let Ok(port) = w.triggers.osc_port_str.parse::<u16>() {
         w.triggers.manager.osc_port = port;
@@ -102,6 +117,11 @@ pub(crate) fn osc_stop(w: &mut MainWindow) -> Task<RootMessage> {
 pub(crate) fn osc_port_changed(w: &mut MainWindow, s: String) -> Task<RootMessage> {
     w.triggers.osc_port_str = s;
     Task::none()
+}
+
+pub(crate) fn osc_autostart_toggled(w: &mut MainWindow, v: bool) -> Task<RootMessage> {
+    w.app_config.triggers.osc_enabled = v;
+    crate::ui::output::save_config(w)
 }
 
 pub(crate) fn apply_action(w: &mut MainWindow, action: Action) -> Task<RootMessage> {
@@ -159,21 +179,14 @@ pub(crate) fn apply_action(w: &mut MainWindow, action: Action) -> Task<RootMessa
             Task::none()
         }
         Action::StartTimer => {
-            if !w.presenting.timer_running {
-                w.presenting.timer_running = true;
-                w.presenting.timer_start_epoch = w.presenting.clock_secs;
-            }
+            crate::ui::stage::start_timer(w);
             Task::none()
         }
         Action::StopTimer => {
-            w.presenting.timer_running = false;
+            crate::ui::stage::stop_timer(w);
             Task::none()
         }
-        Action::ResetTimer => {
-            w.presenting.timer_secs = 0;
-            w.presenting.timer_running = false;
-            Task::none()
-        }
+        Action::ResetTimer => crate::ui::stage::reset_timer(w),
     }
 }
 
@@ -262,6 +275,8 @@ pub(crate) fn select_midi_port(w: &mut MainWindow, port: usize) -> Task<RootMess
 
 pub(crate) fn triggers_panel<'a>(
     state: &'a crate::ui::state::TriggersState,
+    http_autostart: bool,
+    osc_autostart: bool,
 ) -> Element<'a, RootMessage> {
     let http_running = state.manager.http_running;
     let http_port = &state.http_port_str;
@@ -291,17 +306,34 @@ pub(crate) fn triggers_panel<'a>(
     } else {
         button("Start").on_press(wrap(Message::HttpStart))
     };
-    let http_section = row![
-        text("HTTP REST").size(13.0),
-        Space::new().width(Length::Fill),
-        text_input("Port", http_port)
-            .on_input(move |v| wrap(Message::HttpPortChanged(v)))
-            .width(70),
-        http_start_stop,
-        text(http_label).size(11.0),
+    let http_autostart_toggle = toggler(http_autostart)
+        .on_toggle(|v| wrap(Message::HttpAutoStartToggled(v)))
+        .label("At launch")
+        .spacing(4)
+        .size(14.0);
+    let http_section = column![
+        row![
+            text("HTTP REST").size(13.0),
+            Space::new().width(Length::Fill),
+            text_input("Port", http_port)
+                .on_input(move |v| wrap(Message::HttpPortChanged(v)))
+                .width(70),
+            http_start_stop,
+            text(http_label).size(11.0),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center),
+        row![
+            Space::new().width(Length::Fill),
+            http_autostart_toggle,
+            text("Accepts unauthenticated commands; trusted networks only.")
+                .size(10.0)
+                .color(crate::ui::theme::TEXT_MUTED),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center),
     ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
+    .spacing(2);
 
     let osc_label = if osc_running {
         format!("OSC listening on :{osc_port}")
@@ -313,6 +345,11 @@ pub(crate) fn triggers_panel<'a>(
     } else {
         button("Start").on_press(wrap(Message::OscStart))
     };
+    let osc_autostart_toggle = toggler(osc_autostart)
+        .on_toggle(|v| wrap(Message::OscAutoStartToggled(v)))
+        .label("At launch")
+        .spacing(4)
+        .size(14.0);
     let osc_section = row![
         text("OSC").size(13.0),
         Space::new().width(Length::Fill),
@@ -320,6 +357,7 @@ pub(crate) fn triggers_panel<'a>(
             .on_input(move |v| wrap(Message::OscPortChanged(v)))
             .width(70),
         osc_start_stop,
+        osc_autostart_toggle,
         text(osc_label).size(11.0),
     ]
     .spacing(6)

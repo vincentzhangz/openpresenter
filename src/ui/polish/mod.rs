@@ -23,11 +23,12 @@ pub(crate) fn toggle_reduce_motion(w: &mut MainWindow) -> Task<Message> {
     Task::none()
 }
 
-/// Bring focus to the global search field by switching to the Presentations
-/// rail (where the search input lives).
+/// Bring focus to the global search field: switch to the Presentations rail
+/// (where the field lives) and issue a widget operation that focuses it, so the
+/// user can start typing immediately.
 pub(crate) fn focus_search(w: &mut MainWindow) -> Task<Message> {
     w.shell.sidebar_tab = crate::ui::messages::SidebarTab::Presentations;
-    Task::none()
+    iced::widget::operation::focus(crate::ui::components::global_search_id())
 }
 
 pub(crate) fn undo(w: &mut MainWindow) -> Task<Message> {

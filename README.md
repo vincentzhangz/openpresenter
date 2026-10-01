@@ -37,7 +37,7 @@ OpenPresenter is a live presentation tool built entirely in Rust. It targets liv
 | ---------------------------- | ------------------------------------------------------------------------------------------- |
 | **Unified Professional Shell**| Dark multi-dock layout: left library/playlist rail, center canvas & live view, right dock   |
 | **Quick Clear & Blackout**   | Broadcast-grade quick clear actions (`Clear All`, `Slide`, `Media`, `Props`, `Messages`) and seamless Blackout with live NDI synchronization |
-| **Stage Display / Confidence Monitor** | Dedicated stage display window with live wall clock, countdown timer, current/next slide text, and stage alerts |
+| **Stage Display / Confidence Monitor** | Dedicated stage display (in-app view or its own OS window for a second monitor) with live wall clock, countdown timer, current/next slide text, and stage alerts |
 | **Multi-Object Compositor**  | Canvas & frame rasteriser supporting multi-layer text, shapes (rectangle, ellipse, triangle, line), images, and video with z-ordering |
 | **Multi-Screen & Looks Matrix** | Routing matrix for up to 8 outputs (Window / NDI); toggle layers per display; custom looks  |
 | **Screen Output Management** | Configure screen destinations, 720p/1080p resolution changes, output routing modal        |
@@ -55,7 +55,7 @@ OpenPresenter is a live presentation tool built entirely in Rust. It targets liv
 | **GPU Text Rendering**       | Hardware-accelerated text via [glyphon](https://github.com/grovesNL/glyphon) + wgpu          |
 | **Software Renderer**        | CPU BGRA rasteriser with shadow, outline, shape rasterisation, and alpha blending fallback |
 | **Video Decoding**           | Modern FFmpeg 9-backed frame decoder with hardware acceleration paths where available       |
-| **Audio Playback**           | rodio-based audio player with load/play/pause/stop/volume                                   |
+| **Audio Playback**           | rodio-based audio player with load/play/pause/stop/volume, loop, an auto-advancing playback queue, and elapsed/total time readout                                   |
 | **Recording**                | H.264 video recording pipeline via FFmpeg encoder with bounded backpressure                 |
 | **HTTP Triggers**            | axum 0.8 REST API for remote slide control (`/api/slides/next`, etc.)                       |
 | **OSC Triggers**             | rosc-powered Open Sound Control listener (`/slide/next`, `/black`, etc.)                    |
@@ -70,21 +70,27 @@ OpenPresenter is a live presentation tool built entirely in Rust. It targets liv
 
 ## Operator Keyboard Shortcuts
 
-OpenPresenter provides standard operator shortcuts for rapid live control:
+OpenPresenter provides standard operator shortcuts for rapid live control.
+Navigation, digits, and clear keys apply in Show mode with a presentation
+loaded; undo/redo and settings work everywhere:
 
 | Key Combination | Action |
 | --- | --- |
-| <kbd>Space</kbd> / <kbd>→</kbd> / <kbd>↓</kbd> | Next Slide |
-| <kbd>←</kbd> / <kbd>↑</kbd> | Previous Slide |
+| <kbd>Space</kbd> / <kbd>→</kbd> / <kbd>↓</kbd> / <kbd>PgDn</kbd> | Next Slide |
+| <kbd>←</kbd> / <kbd>↑</kbd> / <kbd>PgUp</kbd> | Previous Slide |
+| <kbd>Home</kbd> / <kbd>End</kbd> | First / Last Slide |
 | <kbd>1</kbd> – <kbd>9</kbd> | Jump directly to Slide index |
+| <kbd>V</kbd> | Jump to next **Verse** group |
+| <kbd>C</kbd> | Jump to next **Chorus** group (Clear Slide if none exists) |
 | <kbd>F1</kbd> | **Clear All** (clears slide, media, props, and messages) |
 | <kbd>F2</kbd> | **Clear Slide** (clears text and foreground slide content) |
 | <kbd>F3</kbd> | **Clear Background / Media** |
 | <kbd>F4</kbd> | **Clear Props** |
-| <kbd>F5</kbd> | **Clear Messages** |
-| <kbd>F6</kbd> / <kbd>B</kbd> | Toggle **Blackout** (instant black screen across outputs & NDI) |
-| <kbd>V</kbd> | Toggle View Mode (Show / Edit / Stage / Unified) |
-| <kbd>C</kbd> | Clear Active Output |
+| <kbd>F5</kbd> | **Clear Audio** (stops playback) |
+| <kbd>F6</kbd> | **Clear Messages** |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>1</kbd> – <kbd>6</kbd> | Same as F1 – F6 |
+| <kbd>B</kbd> | Toggle **Blackout** (instant black screen across outputs & NDI) |
+| <kbd>?</kbd> | Toggle the shortcuts overlay |
 | <kbd>Cmd</kbd> + <kbd>,</kbd> / <kbd>Ctrl</kbd> + <kbd>,</kbd> | Open Settings Modal |
 
 ---

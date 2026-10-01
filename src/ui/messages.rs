@@ -2,6 +2,10 @@
 pub enum Message {
     Noop,
     EscapePressed,
+    /// Fired once after startup: applies persisted settings that have side
+    /// effects (auto-starting the HTTP/OSC remote-control listeners) which
+    /// must run inside the async executor context, not in `MainWindow::new`.
+    StartupConfig,
     DismissError,
     SwitchMode(ViewMode),
     SwitchInspectorTab(InspectorTab),
@@ -16,6 +20,8 @@ pub enum Message {
     Quit,
 
     SearchQueryChanged(String),
+    /// Open a specific slide of a presentation from a global-search result row.
+    SearchResultSlide(String, usize),
 
     NewPresentationClicked,
     CreatePresentation,
@@ -59,6 +65,9 @@ pub enum Message {
     StartTimer,
     StopTimer,
     ResetTimer,
+    /// Extend (or arm) the stage countdown by the given number of seconds.
+    CountdownAdd(u64),
+    CountdownClear,
 
     ToggleNdi,
     NdiSendCurrent,
@@ -89,6 +98,8 @@ pub enum Message {
     VideoFilePicked(Option<String>),
 
     ToggleStageDisplay,
+    /// Open (or close) the dedicated stage-display OS window.
+    ToggleStageWindow,
     ClockTick,
     Stage(crate::ui::stage::Message),
 
@@ -110,6 +121,8 @@ pub enum Message {
     Bible(crate::ui::bible::Message),
 
     VideoFrameTick,
+    /// Periodic audio tick (position readout + queue auto-advance).
+    AudioTick,
     Video(crate::ui::video::Message),
 
     OpenOutputWindow,
@@ -130,7 +143,6 @@ pub enum Message {
     Output(crate::ui::output::Message),
 
     ImportExport(crate::ui::import_export::Message),
-    ToggleImportExportPanel,
 
     Props(crate::ui::props::Message),
     SetMask(crate::domain::Mask),

@@ -7,22 +7,27 @@ pub struct MediaPlayer {
     looping: bool,
     volume: f32,
     muted: bool,
+    /// Non-fatal audio problem detected at open time, surfaced once by the UI.
+    audio_error: Option<String>,
 }
 
 impl MediaPlayer {
     pub fn open(path: &str) -> Result<Self> {
         let video = VideoDecoder::open(path)?;
 
-        let audio = AudioPlayer::new()
-            .map_err(|e| eprintln!("MediaPlayer: audio init failed: {e}"))
-            .ok()
-            .and_then(|player| match player.load(path) {
-                Ok(_) => Some(player),
-                Err(e) => {
-                    eprintln!("MediaPlayer: audio load failed for '{path}': {e}");
-                    None
-                }
-            });
+        // Distinguish "file genuinely has no audio track" (fine — many clips are
+        // silent) from "audio backend failed" (an operator-visible fault). Only
+        // the latter is worth reporting.
+        let (audio, audio_error) = match AudioPlayer::new() {
+            Err(e) => (None, Some(format!("audio output unavailable: {e}"))),
+            Ok(mut player) => match player.load(path) {
+                Ok(()) => (Some(player), None),
+                Err(e) => (
+                    None,
+                    Some(format!("could not load audio from '{path}': {e}")),
+                ),
+            },
+        };
 
         Ok(Self {
             video,
@@ -30,6 +35,7 @@ impl MediaPlayer {
             looping: false,
             volume: 1.0,
             muted: false,
+            audio_error,
         })
     }
 
@@ -69,6 +75,16 @@ impl MediaPlayer {
 
     pub fn is_looping(&self) -> bool {
         self.looping
+    }
+
+    /// Take a pending fatal decode error, if the video decoder reported one.
+    pub fn take_decode_error(&self) -> Option<String> {
+        self.video.take_error()
+    }
+
+    /// Take the non-fatal audio problem detected when this player was opened.
+    pub fn take_audio_error(&self) -> Option<String> {
+        self.audio_error.clone()
     }
 
     pub fn set_volume(&mut self, volume: f32) {

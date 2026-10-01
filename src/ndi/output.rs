@@ -152,7 +152,7 @@ async fn output_task(
         };
 
         if let Err(e) = sender.send_frame(&frame) {
-            eprintln!("NDI send error: {}", e);
+            log::error!("NDI send error: {e}");
         }
 
         tokio::time::sleep(frame_interval).await;

@@ -16,40 +16,41 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
+/// App-general behaviour settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GeneralConfig {
+    /// Workspace opened at launch: `"show"` (live) or `"edit"`.
     #[serde(default = "default_startup_mode")]
     pub startup_mode: String,
-    #[serde(default = "default_true")]
-    pub auto_reconnect: bool,
 }
 
 fn default_startup_mode() -> String {
     "show".to_string()
 }
 
-fn default_true() -> bool {
-    true
-}
-
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             startup_mode: default_startup_mode(),
-            auto_reconnect: true,
         }
     }
 }
 
+/// Remote-control listener settings.
+///
+/// The HTTP and OSC listeners accept unauthenticated control commands on all
+/// interfaces, so they are **off by default**; enabling
+/// `http_enabled`/`osc_enabled` (settings UI or config file) starts them at
+/// launch on trusted networks only.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TriggerConfig {
     #[serde(default = "default_http_port")]
     pub http_port: u16,
     #[serde(default = "default_osc_port")]
     pub osc_port: u16,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub http_enabled: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub osc_enabled: bool,
 }
 
@@ -66,8 +67,8 @@ impl Default for TriggerConfig {
         Self {
             http_port: default_http_port(),
             osc_port: default_osc_port(),
-            http_enabled: true,
-            osc_enabled: true,
+            http_enabled: false,
+            osc_enabled: false,
         }
     }
 }
@@ -166,9 +167,7 @@ impl Default for Config {
 fn default_db_path() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| {
-            eprintln!(
-                "warning: could not determine data directory; storing DB in current directory"
-            );
+            log::warn!("could not determine data directory; storing DB in current directory");
             PathBuf::from(".")
         })
         .join("openpresenter")
@@ -176,18 +175,39 @@ fn default_db_path() -> PathBuf {
 }
 
 impl Config {
+    /// Load the persisted configuration.
+    ///
+    /// A missing config file is normal on first run and yields defaults. A
+    /// *corrupt* or unreadable one is a different situation: the user has real
+    /// settings (output routing, resolution, triggers) that we must not silently
+    /// destroy by overwriting them with defaults. In that case the old file is
+    /// preserved as `config.toml.bak` and defaults are returned.
     pub fn load() -> Self {
         let path = Self::config_path();
         match std::fs::read_to_string(&path) {
-            Ok(contents) => toml::from_str(&contents).unwrap_or_else(|e| {
-                eprintln!("config parse error ({path:?}): {e} — using defaults");
-                Self::default()
-            }),
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    Self::backup_corrupt_config(&path);
+                    log::warn!(
+                        "config parse error ({path:?}): {e} — using defaults (original kept as .bak)"
+                    );
+                    Self::default()
+                }
+            },
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(e) => {
-                eprintln!("config read error ({path:?}): {e} — using defaults");
+                log::warn!("config read error ({path:?}): {e} — using defaults");
                 Self::default()
             }
+        }
+    }
+
+    /// Move an unparseable config aside so the next save cannot destroy it.
+    fn backup_corrupt_config(path: &std::path::Path) {
+        let bak = path.with_extension("toml.bak");
+        if let Err(e) = std::fs::rename(path, &bak) {
+            log::warn!("could not back up corrupt config to {bak:?}: {e}");
         }
     }
 
@@ -204,7 +224,7 @@ impl Config {
     pub fn config_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| {
-                eprintln!("warning: could not determine config directory; using current directory");
+                log::warn!("could not determine config directory; using current directory");
                 PathBuf::from(".")
             })
             .join("openpresenter")
@@ -256,7 +276,32 @@ mod tests {
         assert_eq!(restored.ndi.source_name, original.ndi.source_name);
         assert_eq!(restored.general.startup_mode, "show");
         assert_eq!(restored.triggers.http_port, 9090);
+        // Remote-control listeners must stay off unless explicitly enabled.
+        assert!(!restored.triggers.http_enabled);
+        assert!(!restored.triggers.osc_enabled);
         assert_eq!(restored.transitions.default_duration_ms, 500);
         assert_eq!(restored.ui.default_grid_cols, 4);
+    }
+
+    #[test]
+    fn load_ignores_removed_config_fields() {
+        // Older config files may contain fields that no longer exist; they
+        // must be skipped rather than rejected.
+        let legacy = "\
+db_path = '/tmp/library.db'
+[ndi]
+source_name = 'OpenPresenter'
+enabled = true
+frame_rate = 60
+[output]
+width = 1920
+height = 1080
+[general]
+startup_mode = 'show'
+auto_reconnect = true
+";
+        let parsed: Config = toml::from_str(legacy).expect("legacy config should parse");
+        assert_eq!(parsed.general.startup_mode, "show");
+        assert!(!parsed.triggers.http_enabled);
     }
 }

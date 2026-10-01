@@ -69,6 +69,10 @@ pub struct RenderPipeline {
     pub height: u32,
     gpu_text: Option<GpuTextRenderer>,
     image_cache: lru::LruCache<String, image::RgbaImage>,
+    /// Paths that previously failed to load. Without this, a missing image is
+    /// re-read from disk and re-logged on *every* frame, which floods the log
+    /// and burns I/O for the whole duration of a slide.
+    failed_images: std::collections::HashSet<String>,
 }
 
 impl RenderPipeline {
@@ -89,6 +93,7 @@ impl RenderPipeline {
             height,
             gpu_text,
             image_cache: lru::LruCache::new(cache_cap),
+            failed_images: std::collections::HashSet::new(),
         }
     }
 
@@ -99,6 +104,7 @@ impl RenderPipeline {
             height,
             gpu_text: None,
             image_cache: lru::LruCache::new(cache_cap),
+            failed_images: std::collections::HashSet::new(),
         }
     }
 
@@ -134,6 +140,10 @@ impl RenderPipeline {
                 frame.clear(color.r, color.g, color.b, 255);
             }
             Background::Image(path) if !path.is_empty() => {
+                if self.failed_images.contains(path) {
+                    frame.clear(0, 0, 0, 255);
+                    return;
+                }
                 if !self.image_cache.contains(path) {
                     match image::open(path) {
                         Ok(img) => {
@@ -147,7 +157,8 @@ impl RenderPipeline {
                             self.image_cache.put(path.clone(), resized);
                         }
                         Err(e) => {
-                            eprintln!("background image load error '{path}': {e}");
+                            log::error!("background image load error '{path}': {e}");
+                            self.failed_images.insert(path.clone());
                             frame.clear(0, 0, 0, 255);
                             return;
                         }
@@ -346,13 +357,17 @@ impl RenderPipeline {
         if dest_w == 0 || dest_h == 0 {
             return;
         }
+        if self.failed_images.contains(path) {
+            return;
+        }
         if !self.image_cache.contains(path) {
             match image::open(path) {
                 Ok(img) => {
                     self.image_cache.put(path.to_string(), img.to_rgba8());
                 }
                 Err(e) => {
-                    eprintln!("draw_image_rect load error '{path}': {e}");
+                    log::error!("draw_image_rect load error '{path}': {e}");
+                    self.failed_images.insert(path.to_string());
                     return;
                 }
             }
@@ -818,5 +833,30 @@ mod tests {
             let glyph = pixel_font(c);
             assert!(glyph.iter().any(|&row| row > 0));
         }
+    }
+}
+
+#[cfg(test)]
+mod negative_cache_tests {
+    use super::*;
+
+    /// A missing image must be recorded as failed so the renderer does not retry
+    /// the disk read (and re-log the error) on every single frame.
+    #[test]
+    fn failed_image_path_is_remembered() {
+        let mut pipeline = RenderPipeline::new_software(8, 8);
+        let path = "/nonexistent/definitely-missing-image.png";
+        assert!(!pipeline.failed_images.contains(path));
+
+        let mut frame = Frame::new(8, 8);
+        pipeline.draw_image_rect(&mut frame, path, 0, 0, 4, 4, 1.0);
+        assert!(
+            pipeline.failed_images.contains(path),
+            "failed path should be cached after the first attempt"
+        );
+
+        // Subsequent draws short-circuit without another cache insert or log.
+        pipeline.draw_image_rect(&mut frame, path, 0, 0, 4, 4, 1.0);
+        assert!(pipeline.failed_images.contains(path));
     }
 }

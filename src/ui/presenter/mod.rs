@@ -508,14 +508,21 @@ fn right_panel<'a>(
                 ..Default::default()
             })
             .into()
+    } else if let Some(handle) = video_frame {
+        // While a video plays on the media layer, mirror the live frame here —
+        // the confidence monitor must show what the audience actually sees.
+        container(crate::ui::editor::canvas::image_widget_panel_handle(
+            handle.clone(),
+        ))
+        .width(Length::Fill)
+        .height(130)
+        .into()
     } else {
         container(next_slide_canvas_panel(Some(current_slide)))
             .width(Length::Fill)
             .height(130)
             .into()
     };
-
-    let _ = video_frame;
 
     column![next_section, conf_header, conf_preview]
         .width(220)

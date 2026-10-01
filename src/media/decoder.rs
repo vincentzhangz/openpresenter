@@ -30,6 +30,8 @@ pub struct VideoDecoder {
     position_secs: Arc<Mutex<f64>>,
     cmd_tx: Sender<DecoderCmd>,
     is_playing: Arc<AtomicBool>,
+    /// Fatal errors reported by the decode thread, drained by the UI on tick.
+    error: Arc<Mutex<Option<String>>>,
     pub width: u32,
     pub height: u32,
     pub duration_secs: f64,
@@ -65,18 +67,24 @@ impl VideoDecoder {
         let current_frame: Arc<Mutex<Option<RgbaFrame>>> = Arc::new(Mutex::new(None));
         let position_secs: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
         let is_playing = Arc::new(AtomicBool::new(false));
+        let error = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = channel::<DecoderCmd>();
 
         let frame_arc = current_frame.clone();
         let pos_arc = position_secs.clone();
         let playing_arc = is_playing.clone();
+        let err_arc = error.clone();
         let path_owned = path.to_string();
 
         thread::Builder::new()
             .name("video-decoder".into())
             .spawn(move || {
-                if let Err(e) = decode_loop(path_owned, frame_arc, pos_arc, playing_arc, cmd_rx) {
-                    eprintln!("VideoDecoder thread error: {e}");
+                // A decode failure must not be silent: the frame would otherwise
+                // freeze on the output with no indication of what went wrong.
+                if let Err(e) = decode_loop(path_owned, frame_arc, pos_arc, playing_arc, cmd_rx)
+                    && let Ok(mut slot) = err_arc.lock()
+                {
+                    *slot = Some(e.to_string());
                 }
             })?;
 
@@ -85,6 +93,7 @@ impl VideoDecoder {
             position_secs,
             cmd_tx,
             is_playing,
+            error,
             width,
             height,
             duration_secs,
@@ -134,6 +143,14 @@ impl VideoDecoder {
 
     pub fn shared_frame_arc(&self) -> Arc<Mutex<Option<RgbaFrame>>> {
         Arc::clone(&self.current_frame)
+    }
+
+    /// Take a pending fatal decode error, if the decode thread reported one.
+    ///
+    /// Returns `None` when decoding is healthy, and clears the stored error so
+    /// each failure is surfaced to the user exactly once.
+    pub fn take_error(&self) -> Option<String> {
+        self.error.lock().ok()?.take()
     }
 }
 
@@ -303,8 +320,11 @@ fn decode_loop(
         let mut rgba_frame = ffmpeg::frame::Video::empty();
 
         let base_frame_delay_ms = {
-            let stream = ictx.stream(video_stream_index).unwrap();
-            let fps = f64::from(stream.avg_frame_rate());
+            let fps = f64::from(
+                ictx.stream(video_stream_index)
+                    .map(|s| s.avg_frame_rate())
+                    .unwrap_or(ffmpeg::Rational::new(25, 1)),
+            );
             if fps > 0.0 {
                 (1000.0 / fps).round() as u64
             } else {
@@ -429,4 +449,24 @@ fn decode_loop(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The error slot must start empty and must report each stored failure
+    /// exactly once, so a decoder fault surfaces to the user a single time.
+    #[test]
+    fn take_error_drains_once() {
+        let slot = Arc::new(Mutex::new(None));
+        assert_eq!(slot.lock().unwrap().take(), None);
+
+        *slot.lock().unwrap() = Some("stream not found".to_string());
+        assert_eq!(
+            slot.lock().unwrap().take(),
+            Some("stream not found".to_string())
+        );
+        assert_eq!(slot.lock().unwrap().take(), None);
+    }
 }

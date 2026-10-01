@@ -32,7 +32,7 @@ pub use list_item::list_item;
 pub use live_badge::live_badge;
 pub use preview_text::truncate;
 pub use reorder_toolbar::{ReorderControls, reorder_toolbar};
-pub use search_input::search_input;
+pub use search_input::{global_search_id, search_input, search_input_with_id};
 pub use section_header::{section_header, section_label};
 pub use tab_button::{tab_bar, tab_btn};
 pub use toggle_button::{compact_toggle_btn, option_btn, toggle_btn};

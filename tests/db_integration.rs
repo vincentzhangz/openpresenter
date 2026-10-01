@@ -201,3 +201,44 @@ fn delete_song() {
     repo.delete_song(&id).expect("delete");
     assert!(repo.list_songs().expect("list").is_empty());
 }
+
+/// A slide row that cannot be deserialized must surface as an error rather than
+/// being silently dropped. Dropping it would hide real data loss from the
+/// operator and risk a later `replace_slides` writing the truncated list back.
+#[test]
+fn corrupted_slide_data_is_reported_not_silently_dropped() {
+    let db = in_memory_db();
+    let repo = PresentationRepository::new(Arc::clone(&db));
+    let pres = repo.create_presentation("Corrupt").expect("create");
+
+    let slide = Slide {
+        id: "slide-1".to_string(),
+        content: SlideContent::Text {
+            text: "Verse 1".to_string(),
+            style: TextStyle::default(),
+        },
+        background: Background::Solid(Color::black()),
+        transition: Transition::Cut,
+        group: None,
+        notes: None,
+        layers: Vec::new(),
+        cues: Vec::new(),
+    };
+    repo.add_slide(&pres.id, &slide, 0).expect("add slide");
+
+    // Corrupt the stored JSON directly, behind the repository's back.
+    db.with_conn(|conn| {
+        conn.execute(
+            "UPDATE slides SET slide_data = ?1",
+            rusqlite::params!["{ not valid json"],
+        )?;
+        Ok(())
+    })
+    .expect("corrupt row");
+
+    let result = repo.get_presentation(&pres.id);
+    assert!(
+        result.is_err(),
+        "expected an error for unreadable slide data, got {result:?}"
+    );
+}

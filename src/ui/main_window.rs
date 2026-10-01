@@ -61,7 +61,6 @@ pub struct MainWindow {
     pub(crate) bible: BibleState,
     pub(crate) audio: AudioState,
     pub(crate) output: crate::ui::state::OutputState,
-    pub(crate) import_export: crate::ui::state::ImportExportState,
     pub(crate) props: crate::ui::state::PropsState,
     pub(crate) triggers: crate::ui::state::TriggersState,
     pub(crate) recording: crate::ui::state::RecordingFeatureState,
@@ -72,14 +71,39 @@ impl MainWindow {
         let app_config = Config::load();
         let services = crate::services::Services::new(db.clone());
         let mut trigger_manager = crate::triggers::TriggerManager::default();
+        // Seed the listener ports from settings so auto-start (and the
+        // triggers panel) use the persisted values rather than built-ins.
+        trigger_manager.http_port = app_config.triggers.http_port;
+        trigger_manager.osc_port = app_config.triggers.osc_port;
         let trigger_rx = std::sync::Arc::new(tokio::sync::Mutex::new(trigger_manager.subscribe()));
+        let presenting = crate::ui::state::PresentingState {
+            global_transition: crate::domain::Transition::from_config_str(
+                &app_config.transitions.default_type,
+                app_config.transitions.default_duration_ms,
+            ),
+            slide_grid_cols: app_config.ui.default_grid_cols.clamp(2, 6),
+            ..Default::default()
+        };
+        let shell = crate::ui::state::ShellState {
+            current_mode: match app_config.general.startup_mode.as_str() {
+                "edit" => ViewMode::Edit,
+                _ => ViewMode::Show,
+            },
+            ..Default::default()
+        };
+        let ui = crate::ui::state::UiState {
+            reduce_motion: app_config.ui.reduce_motion,
+            ..Default::default()
+        };
+        let http_port_str = app_config.triggers.http_port.to_string();
+        let osc_port_str = app_config.triggers.osc_port.to_string();
         let mut window = Self {
-            shell: crate::ui::state::ShellState::default(),
+            shell,
             editor: crate::ui::state::EditorState::default(),
-            presenting: crate::ui::state::PresentingState::default(),
+            presenting,
             library: crate::ui::state::LibraryState::new(LibraryRepository::new(db.clone())),
             theme_state: crate::ui::state::ThemesState::new(ThemeRepository::new(db.clone())),
-            ui: crate::ui::state::UiState::default(),
+            ui,
             song: SongState::new(crate::db::SongRepository::new(db.clone())),
             video: crate::ui::state::VideoState::default(),
             service: ServiceState::new(),
@@ -89,14 +113,13 @@ impl MainWindow {
             audio: AudioState::default(),
             output: crate::ui::state::OutputState::new(&app_config),
             app_config,
-            import_export: crate::ui::state::ImportExportState::default(),
             props: crate::ui::state::PropsState::default(),
             triggers: crate::ui::state::TriggersState {
                 manager: trigger_manager,
                 rx: trigger_rx,
                 panel_open: false,
-                http_port_str: String::from("9090"),
-                osc_port_str: String::from("9000"),
+                http_port_str,
+                osc_port_str,
                 midi_ports: crate::triggers::midi::list_midi_inputs(),
                 selected_midi_port: None,
                 new_macro_name: String::new(),
@@ -113,7 +136,22 @@ impl MainWindow {
         window.load_themes();
         window.load_lib_assets();
         window.load_props();
-        (window, Task::none())
+        // Server auto-start must happen inside the executor context, so it is
+        // deferred to a single startup message instead of running here.
+        let startup_task = Task::perform(async {}, |()| Message::StartupConfig);
+        (window, startup_task)
+    }
+
+    /// Apply the persisted settings that have side effects: starting the
+    /// remote-control listeners the user enabled in settings. Purely in-memory
+    /// restorations (transitions, startup mode) happen directly in `new`.
+    fn apply_startup_config(&mut self) {
+        if self.app_config.triggers.http_enabled {
+            self.triggers.manager.start_http();
+        }
+        if self.app_config.triggers.osc_enabled {
+            self.triggers.manager.start_osc();
+        }
     }
 
     pub(crate) fn props_path(&self) -> std::path::PathBuf {
@@ -212,6 +250,17 @@ impl MainWindow {
     /// Surface an error in the UI toast (replacing `eprintln!` paths).
     pub(crate) fn set_error(&mut self, msg: impl Into<String>) {
         self.ui.error_message = Some(msg.into());
+    }
+
+    /// Persist the application config, surfacing any failure to the operator.
+    ///
+    /// Settings such as output routing and resolution live only in this file, so
+    /// a silently dropped write means the app looks configured but comes back
+    /// wrong after a restart.
+    pub(crate) fn save_config(&mut self) {
+        if let Err(e) = self.app_config.save() {
+            self.set_error(format!("Failed to save settings: {e}"));
+        }
     }
 
     /// Persist the given slide and reload the editing presentation on success.
@@ -392,6 +441,10 @@ impl MainWindow {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Noop => Task::none(),
+            Message::StartupConfig => {
+                self.apply_startup_config();
+                Task::none()
+            }
             Message::EscapePressed => {
                 if self.output.settings_open {
                     self.output.settings_open = false;
@@ -446,21 +499,22 @@ impl MainWindow {
                 crate::ui::navigation::switch_mode(self, next)
             }
             Message::StartTimer => {
-                self.presenting.timer_running = true;
+                crate::ui::stage::start_timer(self);
                 Task::none()
             }
             Message::StopTimer => {
-                self.presenting.timer_running = false;
+                crate::ui::stage::stop_timer(self);
                 Task::none()
             }
-            Message::ResetTimer => {
-                self.presenting.timer_running = false;
-                self.presenting.timer_secs = 0;
-                Task::none()
-            }
+            Message::ResetTimer => crate::ui::stage::reset_timer(self),
+            Message::CountdownAdd(secs) => crate::ui::stage::countdown_add(self, secs),
+            Message::CountdownClear => crate::ui::stage::countdown_clear(self),
             Message::BackToList => crate::ui::navigation::back_to_list(self),
             Message::Quit => crate::ui::navigation::quit(self),
             Message::SearchQueryChanged(q) => crate::ui::navigation::search_query_changed(self, q),
+            Message::SearchResultSlide(name, index) => {
+                crate::ui::navigation::open_search_result_slide(self, name, index)
+            }
             Message::NewPresentationClicked => {
                 crate::ui::navigation::new_presentation_clicked(self)
             }
@@ -490,6 +544,7 @@ impl MainWindow {
             Message::ImageFilePicked(_) => Task::none(),
             Message::VideoFilePicked(_) => Task::none(),
             Message::VideoFrameTick => crate::ui::video::video_frame_tick(self),
+            Message::AudioTick => crate::ui::audio::audio_tick(self),
             Message::Video(msg) => crate::ui::video::update(self, msg),
             Message::PresentingSelectSlide(i) => {
                 self.presenting.slide_context_index = None;
@@ -868,6 +923,7 @@ impl MainWindow {
             }
             Message::Ndi(msg) => crate::ui::ndi::update(self, msg),
             Message::ToggleStageDisplay => crate::ui::stage::toggle_stage_display(self),
+            Message::ToggleStageWindow => crate::ui::stage::toggle_stage_window(self),
             Message::ClockTick => crate::ui::stage::clock_tick(self),
             Message::Stage(msg) => crate::ui::stage::update(self, msg),
             Message::SwitchSidebarTab(tab) => crate::ui::navigation::switch_sidebar_tab(self, tab),
@@ -905,7 +961,6 @@ impl MainWindow {
             Message::Audio(msg) => crate::ui::audio::update(self, msg),
             Message::Output(msg) => crate::ui::output::update(self, msg),
             Message::ImportExport(msg) => crate::ui::import_export::update(self, msg),
-            Message::ToggleImportExportPanel => crate::ui::import_export::toggle_panel(self),
             Message::Props(msg) => crate::ui::props::update(self, msg),
             Message::SetMask(mask) => crate::ui::props::set_mask(self, mask),
             Message::TogglePropsPanel => crate::ui::props::toggle_panel(self),
@@ -922,6 +977,8 @@ impl MainWindow {
     pub fn title(&self, id: window::Id) -> String {
         if Some(id) == self.output.window_id {
             String::from("OpenPresenter — Output")
+        } else if Some(id) == self.presenting.stage_window_id {
+            String::from("OpenPresenter — Stage Display")
         } else if Some(id) == self.editor.delete_confirm_window_id {
             String::from("Confirm Delete")
         } else if Some(id) == self.editor.new_presentation_window_id {
@@ -994,6 +1051,8 @@ impl MainWindow {
                 self.output.black_screen,
                 &layers,
             )
+        } else if Some(id) == self.presenting.stage_window_id {
+            crate::ui::stage::stage_window_view(self)
         } else if Some(id) == self.editor.delete_confirm_window_id {
             self.delete_confirm_view()
         } else if Some(id) == self.editor.new_presentation_window_id {
@@ -1163,14 +1222,20 @@ impl MainWindow {
             shortcut("Right / Space / PgDn / Down", "Next slide"),
             shortcut("Left / PgUp / Up", "Previous slide"),
             shortcut("Home / End", "First / Last slide"),
+            shortcut("1–9", "Go to slide n"),
+            shortcut("V", "Next Verse group"),
+            shortcut("C", "Next Chorus group (Clear Slide if none)"),
             shortcut("F1", "Clear All"),
-            shortcut("F2 / C", "Clear Slide"),
+            shortcut("F2", "Clear Slide"),
             shortcut("F3", "Clear Media"),
             shortcut("F4", "Clear Props"),
             shortcut("F5", "Clear Audio"),
             shortcut("F6", "Clear Messages"),
+            shortcut(
+                "Cmd/Ctrl + 1–6",
+                "Clear All / Slide / Media / Props / Audio / Messages"
+            ),
             shortcut("B", "Toggle Black Screen"),
-            shortcut("Escape", "Return to library"),
             Space::new().height(20),
             button(text("Close").size(13))
                 .on_press(Message::ToggleShortcutsOverlay)
@@ -1295,6 +1360,14 @@ impl MainWindow {
 
         let clock_sub = iced::time::every(Duration::from_secs(1)).map(|_| Message::ClockTick);
 
+        // Fast tick only while audio is playing: keeps the transport position
+        // readout fresh and auto-advances the queue when a track ends.
+        let audio_tick_sub = if self.audio.playing {
+            iced::time::every(Duration::from_millis(250)).map(|_| Message::AudioTick)
+        } else {
+            Subscription::none()
+        };
+
         let global_kb_sub = event::listen_with(|ev, _status, _id| {
             let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = ev
             else {
@@ -1341,6 +1414,7 @@ impl MainWindow {
             anim_sub,
             video_sub,
             clock_sub,
+            audio_tick_sub,
             global_kb_sub,
             window_close_sub,
             trigger_sub,

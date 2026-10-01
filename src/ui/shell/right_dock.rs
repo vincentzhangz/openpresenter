@@ -7,7 +7,7 @@ use crate::ui::theme;
 use crate::ui::{props, triggers};
 use iced::{
     Alignment, Background, Border, Color, Element, Length,
-    widget::{Row, Space, button, column, container, row, scrollable, text, text_input},
+    widget::{Space, button, column, container, row, scrollable, text, text_input},
 };
 use iced_font_awesome::fa_icon_solid;
 
@@ -390,18 +390,6 @@ fn transport_row<'a>(w: &'a MainWindow) -> Element<'a, Message> {
 
 fn show_controls<'a>(w: &'a MainWindow) -> Element<'a, Message> {
     let tab = w.shell.right_dock_tab;
-    let tabs = [
-        (RightDockTab::ShowControls, "Show", "sliders"),
-        (RightDockTab::Props, "Props", "gauge"),
-        (RightDockTab::Messages, "Messages", "bullhorn"),
-        (RightDockTab::Timers, "Timers", "clock"),
-        (RightDockTab::Audio, "Audio", "volume-high"),
-        (RightDockTab::Triggers, "Triggers", "bolt"),
-    ];
-    let mut tab_row = Row::new().spacing(2).align_y(Alignment::Center);
-    for (t, label, icon) in tabs {
-        tab_row = tab_row.push(control_tab(label, icon, t == tab));
-    }
 
     let body: Element<'a, Message> = match tab {
         RightDockTab::Props => props::view(w),
@@ -414,13 +402,29 @@ fn show_controls<'a>(w: &'a MainWindow) -> Element<'a, Message> {
 
     container(
         column![
+            // Tabs are laid out in a fixed 2x3 grid (no horizontal scrolling) so the
+            // scrollbar can never overlap the labels in the fixed-width dock.
             container(
-                scrollable(tab_row)
-                    .direction(scrollable::Direction::Horizontal(
-                        scrollable::Scrollbar::default()
-                    ))
-                    .width(Length::Fill)
+                column![
+                    row![
+                        control_tab("Show", "sliders", tab == RightDockTab::ShowControls),
+                        control_tab("Props", "gauge", tab == RightDockTab::Props),
+                        control_tab("Messages", "bullhorn", tab == RightDockTab::Messages),
+                    ]
+                    .spacing(4)
+                    .width(Length::Fill),
+                    row![
+                        control_tab("Timers", "clock", tab == RightDockTab::Timers),
+                        control_tab("Audio", "volume-high", tab == RightDockTab::Audio),
+                        control_tab("Triggers", "bolt", tab == RightDockTab::Triggers),
+                    ]
+                    .spacing(4)
+                    .width(Length::Fill),
+                ]
+                .spacing(4)
             )
+            .width(Length::Fill)
+            .padding([6, 6])
             .style(theme::section_header_style),
             container(scrollable(body).height(Length::Fill))
                 .width(Length::Fill)
@@ -451,7 +455,8 @@ fn control_tab(label: &'static str, icon: &'static str, active: bool) -> Element
     .align_y(Alignment::Center);
     button(content)
         .on_press(Message::SelectRightDockTab(tab_of(label)))
-        .padding([4, 6])
+        .width(Length::FillPortion(1))
+        .padding([5, 4])
         .style(move |_t: &iced::Theme, status| {
             let bg = if active {
                 Color::from_rgba(0.941, 0.216, 0.031, 0.16)
@@ -584,6 +589,11 @@ fn show_controls_default<'a>(w: &'a MainWindow) -> Element<'a, Message> {
             Message::ToggleStageDisplay
         ),
         control_action(
+            "Toggle Stage Window",
+            "up-right-from-square",
+            Message::ToggleStageWindow
+        ),
+        control_action(
             "Toggle NDI",
             "tower-broadcast",
             Message::Ndi(crate::ui::ndi::Message::Toggle)
@@ -623,6 +633,39 @@ fn timers_panel<'a>(w: &'a MainWindow) -> Element<'a, Message> {
     let secs = w.presenting.timer_secs;
     let mm = secs / 60;
     let ss = secs % 60;
+
+    let remaining = crate::ui::stage::countdown_remaining_secs(w.presenting.countdown_end_epoch);
+    let countdown_row: Element<Message> = match remaining {
+        Some(rem) => {
+            let cm = rem / 60;
+            let cs = rem % 60;
+            let color = if rem < 60 {
+                theme::DANGER_RED
+            } else {
+                theme::TEXT_PRIMARY
+            };
+            row![
+                text("Remaining").size(12).color(theme::TEXT_SECONDARY),
+                Space::new().width(Length::Fill),
+                text(format!("{cm:02}:{cs:02}")).size(16).color(color),
+                button(text("Clear").size(11))
+                    .on_press(Message::CountdownClear)
+                    .padding([4, 8])
+                    .style(theme::ghost_button),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        }
+        None => row![
+            text("Remaining").size(12).color(theme::TEXT_SECONDARY),
+            Space::new().width(Length::Fill),
+            text("not set").size(12).color(theme::TEXT_MUTED),
+        ]
+        .spacing(6)
+        .into(),
+    };
+
     column![
         container(
             text(format!("{mm:02}:{ss:02}"))
@@ -636,6 +679,14 @@ fn timers_panel<'a>(w: &'a MainWindow) -> Element<'a, Message> {
             control_action("Start", "play", Message::StartTimer),
             control_action("Stop", "stop", Message::StopTimer),
             control_action("Reset", "rotate-left", Message::ResetTimer),
+        ]
+        .spacing(4),
+        container(text("STAGE COUNTDOWN").size(10).color(theme::TEXT_MUTED)).padding([10, 0]),
+        countdown_row,
+        row![
+            control_action("+1 min", "plus", Message::CountdownAdd(60)),
+            control_action("+5 min", "plus", Message::CountdownAdd(300)),
+            control_action("+10 min", "plus", Message::CountdownAdd(600)),
         ]
         .spacing(4),
     ]

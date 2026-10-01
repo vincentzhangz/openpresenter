@@ -32,6 +32,7 @@ pub fn view<'a>(w: &'a MainWindow) -> Element<'a, RootMessage> {
         mgr.fps,
         mgr.elapsed().map(|d| d.as_secs()),
         mgr.frames_captured(),
+        mgr.frames_dropped(),
     )
 }
 
@@ -80,6 +81,7 @@ pub fn recording_panel<'a>(
     fps: u32,
     elapsed_secs: Option<u64>,
     frames_captured: u64,
+    frames_dropped: u64,
 ) -> Element<'a, RootMessage> {
     let header = row![
         text("Recording").size(16.0),
@@ -97,8 +99,17 @@ pub fn recording_panel<'a>(
             let secs = elapsed_secs.unwrap_or(0);
             let mm = secs / 60;
             let ss = secs % 60;
+            // Surface dropped frames inline: a stalled encoder silently degrades
+            // the recording, and the operator needs to see it happen.
+            let status = if frames_dropped > 0 {
+                format!(
+                    "Recording  {mm:02}:{ss:02}  ({frames_captured} frames, {frames_dropped} dropped)"
+                )
+            } else {
+                format!("Recording  {mm:02}:{ss:02}  ({frames_captured} frames)")
+            };
             (
-                format!("Recording  {mm:02}:{ss:02}  ({frames_captured} frames)"),
+                status,
                 button(fa_icon_solid("stop").size(13.0_f32)).on_press(wrap(Message::Stop)),
             )
         }

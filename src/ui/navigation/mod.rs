@@ -114,6 +114,35 @@ pub(crate) fn search_query_changed(w: &mut MainWindow, q: String) -> Task<Messag
     Task::none()
 }
 
+/// Jump to a slide picked from a global-search result row: open the owning
+/// presentation for editing, select the slide, and clear the query so the rail
+/// returns to its normal contents.
+pub(crate) fn open_search_result_slide(
+    w: &mut MainWindow,
+    pres_name: String,
+    index: usize,
+) -> Task<Message> {
+    let Some(pres) = w
+        .editor
+        .presentations
+        .iter()
+        .find(|p| p.name == pres_name)
+        .cloned()
+    else {
+        w.set_error(format!("Presentation \"{pres_name}\" was not found."));
+        return Task::none();
+    };
+
+    if w.shell.current_mode != ViewMode::Edit {
+        let _ = switch_mode(w, ViewMode::Edit);
+    }
+    w.editor.editing = Some(pres);
+    w.editor.selected_slide_index = Some(index);
+    w.load_slide_for_editing();
+    w.shell.search_query.clear();
+    Task::none()
+}
+
 pub(crate) fn new_presentation_clicked(w: &mut MainWindow) -> Task<Message> {
     if let Some(existing) = w.editor.new_presentation_window_id {
         return window::gain_focus(existing);

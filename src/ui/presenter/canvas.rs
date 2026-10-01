@@ -399,16 +399,13 @@ impl canvas::Program<Message> for PresenterProgram {
             );
         }
 
-        if self.layers.messages_enabled && self.layers.live_message.is_some() {
-            draw_live_message(
-                &mut frame,
-                self.layers.live_message.as_deref().unwrap(),
-                off_x,
-                off_y,
-                slide_w,
-                slide_h,
-                scale,
-            );
+        if let Some(message) = self
+            .layers
+            .live_message
+            .as_deref()
+            .filter(|_| self.layers.messages_enabled)
+        {
+            draw_live_message(&mut frame, message, off_x, off_y, slide_w, slide_h, scale);
         }
 
         if self.layers.mask_enabled {
