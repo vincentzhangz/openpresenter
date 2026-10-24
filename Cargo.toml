@@ -2,7 +2,7 @@
 name = "openpresenter"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.99"
 authors = ["Vincent <vincentzhangz@outlook.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/vincentzhangz/openpresenter"
@@ -17,12 +17,13 @@ ndi-sdk = []
 anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
 dirs = "7"
 env_logger = "0.11"
 ffmpeg-next = "9"
 futures = "0.3"
 glyphon = "0.12"
+gpui-kit = "0.8"
 iced = { version = "0.14", features = [
     "tokio",
     "wgpu",
@@ -34,16 +35,17 @@ iced = { version = "0.14", features = [
 iced_font_awesome = "0.4"
 image = "0.25"
 log = "0.4"
-lru = "0.18"
-midir = "0.10"
+lru = "0.19"
+midir = "0.11"
 pollster = "1.0"
 rfd = "0.17"
-rodio = { version = "0.22", default-features = false, features = [
+rodio = { version = "0.23", default-features = false, features = [
     "playback",
     "mp3",
     "wav",
     "flac",
     "vorbis",
+    "mp4",
 ] }
 rosc = "0.11"
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -53,7 +55,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = "1"
 tower = "0.5"
-uuid = { version = "1.26", features = ["v4", "serde"] }
+uuid = { version = "1.29", features = ["v4", "serde"] }
 wgpu = "30"
 zip = { version = "8", features = ["deflate"] }
 

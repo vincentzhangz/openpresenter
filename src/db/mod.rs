@@ -2,6 +2,7 @@ mod migrations;
 pub mod repository;
 
 pub use repository::BibleRepository;
+pub use repository::CalendarRepository;
 pub use repository::LibraryRepository;
 pub use repository::PlaylistRepository;
 pub use repository::PresentationRepository;

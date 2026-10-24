@@ -1,4 +1,5 @@
 pub mod app;
+pub(crate) mod atomic;
 pub mod config;
 pub mod db;
 pub mod domain;
@@ -6,6 +7,7 @@ pub mod import;
 pub mod media;
 pub mod ndi;
 pub mod output;
+pub mod pdf;
 pub mod recording;
 pub mod render;
 pub mod services;

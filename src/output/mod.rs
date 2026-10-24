@@ -26,6 +26,94 @@ impl std::fmt::Display for OutputContentRoute {
     }
 }
 
+/// What a screen shows once its content route is resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenKind {
+    /// The composited live slide.
+    Live,
+    /// The stage monitor layout.
+    Stage,
+    /// Nothing at all.
+    Blank,
+}
+
+impl OutputContentRoute {
+    /// Resolve the route into what the screen actually shows.
+    ///
+    /// A mirror shows whatever its source shows. A cycle of mirrors resolves
+    /// to the live slide rather than looping forever.
+    pub fn resolve(&self, routes: &HashMap<String, OutputContentRoute>) -> ScreenKind {
+        self.resolve_with_depth(routes, 0)
+    }
+
+    fn resolve_with_depth(
+        &self,
+        routes: &HashMap<String, OutputContentRoute>,
+        depth: u8,
+    ) -> ScreenKind {
+        // A mirror chain deeper than this is a configuration mistake; show the
+        // live slide rather than recursing forever.
+        if depth > 8 {
+            return ScreenKind::Live;
+        }
+        match self {
+            OutputContentRoute::LiveSlide => ScreenKind::Live,
+            OutputContentRoute::Stage => ScreenKind::Stage,
+            OutputContentRoute::Blank => ScreenKind::Blank,
+            OutputContentRoute::Mirror { source_id } => match routes.get(source_id) {
+                Some(route) => route.resolve_with_depth(routes, depth + 1),
+                None => ScreenKind::Live,
+            },
+        }
+    }
+
+    /// The output whose picture this screen shows.
+    ///
+    /// A mirror shows the picture of its source, so the window of a mirror
+    /// reads the source's frame rather than composing one of its own. A
+    /// chain of mirrors ends at the output that actually holds the picture,
+    /// and a cycle ends at the screen it started from.
+    pub fn source_id(screen_id: &str, routes: &HashMap<String, OutputContentRoute>) -> String {
+        let mut current = screen_id.to_string();
+        for _ in 0..8 {
+            let Some(OutputContentRoute::Mirror { source_id }) = routes.get(&current) else {
+                break;
+            };
+            if source_id == &current {
+                break;
+            }
+            current = source_id.clone();
+        }
+        current
+    }
+}
+
+/// Where an output's window sits on the desktop.
+///
+/// The offset is relative to the chosen display, so a window lands on the
+/// projector whatever the desktop layout happens to be. Every output carries
+/// a placement of its own: two projectors are two screens on two displays,
+/// and they cannot share one pair of coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct OutputPlacement {
+    /// The display the window is placed on; `None` means the primary one.
+    #[serde(default)]
+    pub display_index: Option<usize>,
+    /// The offset of the window within its display, in pixels.
+    #[serde(default)]
+    pub screen_x: f32,
+    /// The offset of the window within its display, in pixels.
+    #[serde(default)]
+    pub screen_y: f32,
+}
+
+impl OutputPlacement {
+    /// Whether the placement is the default one.
+    pub fn is_default(&self) -> bool {
+        self.display_index.is_none() && self.screen_x == 0.0 && self.screen_y == 0.0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedOutput {
     pub id: String,
@@ -35,6 +123,9 @@ pub struct NamedOutput {
     pub width: u32,
     pub height: u32,
     pub active: bool,
+    /// Where this output's window sits on the desktop.
+    #[serde(default)]
+    pub placement: OutputPlacement,
 }
 
 impl NamedOutput {
@@ -44,9 +135,12 @@ impl NamedOutput {
             label: label.into(),
             output_type: OutputType::Window,
             content: OutputContentRoute::LiveSlide,
-            width: 1920,
-            height: 1080,
+            // Zero means the output follows the operator's global output
+            // resolution, until a resolution of its own is picked.
+            width: 0,
+            height: 0,
             active: false,
+            placement: OutputPlacement::default(),
         }
     }
 
@@ -63,9 +157,10 @@ impl NamedOutput {
                 stream_name: stream_name.into(),
             },
             content: OutputContentRoute::LiveSlide,
-            width: 1920,
-            height: 1080,
+            width: 0,
+            height: 0,
             active: false,
+            placement: OutputPlacement::default(),
         }
     }
 }
@@ -79,11 +174,17 @@ pub struct OutputManager {
 impl OutputManager {
     pub fn with_defaults() -> Self {
         let mut m = Self::default();
+        // The main output is the operator's own window: it is always on, but
+        // it never gets a window of its own.
         let mut main = NamedOutput::new_window("main", "Main Output");
         main.active = true;
         m.add(main);
+        // The audience output goes to the projector.
+        m.add(NamedOutput::new_window("audience", "Audience Output"));
+        // The broadcast stream carries the same slide to the network.
         let stream = NamedOutput::new_ndi("stream", "Broadcast Stream", "OpenPresenter");
         m.add(stream);
+        // The stage monitor faces the speaker.
         let mut stage = NamedOutput::new_window("stage", "Stage Monitor");
         stage.content = OutputContentRoute::Stage;
         m.add(stage);
@@ -106,13 +207,32 @@ impl OutputManager {
         }
     }
 
-    pub fn add(&mut self, output: NamedOutput) {
+    /// The most outputs the app drives at once.
+    ///
+    /// Every output is a real window or a real broadcast, and each one is
+    /// composed on its own, so the count is bounded.
+    pub const MAX_OUTPUTS: usize = 8;
+
+    /// Add an output, unless the id is taken or the limit is reached.
+    ///
+    /// Returns `false` when the output was not added, so the caller can
+    /// tell the operator.
+    pub fn add(&mut self, output: NamedOutput) -> bool {
         if self.index.contains_key(&output.id) {
-            return;
+            return false;
+        }
+        if self.outputs.len() >= Self::MAX_OUTPUTS {
+            log::warn!(
+                "not adding the output '{}': the limit of {} outputs is reached",
+                output.id,
+                Self::MAX_OUTPUTS
+            );
+            return false;
         }
         let idx = self.outputs.len();
         self.index.insert(output.id.clone(), idx);
         self.outputs.push(output);
+        true
     }
 
     pub fn remove(&mut self, id: &str) {
@@ -172,6 +292,18 @@ impl OutputManager {
         if let Some(o) = self.get_mut(id) {
             o.label = label.into();
         }
+    }
+
+    /// Move an output's window to another display or offset.
+    pub fn set_placement(&mut self, id: &str, placement: OutputPlacement) {
+        if let Some(o) = self.get_mut(id) {
+            o.placement = placement;
+        }
+    }
+
+    /// Where an output's window sits on the desktop.
+    pub fn placement(&self, id: &str) -> Option<OutputPlacement> {
+        self.get(id).map(|o| o.placement)
     }
 }
 
@@ -333,12 +465,16 @@ mod tests {
     #[test]
     fn output_manager_defaults() {
         let m = OutputManager::with_defaults();
-        assert_eq!(m.len(), 3);
+        assert_eq!(m.len(), 4);
         assert!(!m.is_empty());
 
         let main = m.get("main").expect("main output exists");
         assert!(main.active);
         assert_eq!(main.content, OutputContentRoute::LiveSlide);
+
+        let audience = m.get("audience").expect("audience output exists");
+        assert!(!audience.active);
+        assert_eq!(audience.content, OutputContentRoute::LiveSlide);
 
         let stream = m.get("stream").expect("stream output exists");
         assert_eq!(
@@ -350,6 +486,57 @@ mod tests {
 
         let stage = m.get("stage").expect("stage output exists");
         assert_eq!(stage.content, OutputContentRoute::Stage);
+    }
+
+    #[test]
+    fn a_mirror_shows_what_its_source_shows() {
+        let mut routes = HashMap::new();
+        routes.insert(String::from("projector"), OutputContentRoute::LiveSlide);
+        routes.insert(String::from("stage"), OutputContentRoute::Stage);
+        routes.insert(
+            String::from("second_projector"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("projector"),
+            },
+        );
+
+        assert_eq!(
+            routes["second_projector"].resolve(&routes),
+            ScreenKind::Live
+        );
+
+        // A mirror of the stage shows the stage.
+        routes.insert(
+            String::from("stage_copy"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("stage"),
+            },
+        );
+        assert_eq!(routes["stage_copy"].resolve(&routes), ScreenKind::Stage);
+
+        // A mirror chain resolves through to the end.
+        routes.insert(
+            String::from("loop_a"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("loop_b"),
+            },
+        );
+        routes.insert(
+            String::from("loop_b"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("loop_a"),
+            },
+        );
+        assert_eq!(routes["loop_a"].resolve(&routes), ScreenKind::Live);
+
+        // A mirror of an output that does not exist falls back to the slide.
+        routes.insert(
+            String::from("orphan"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("nowhere"),
+            },
+        );
+        assert_eq!(routes["orphan"].resolve(&routes), ScreenKind::Live);
     }
 
     #[test]
@@ -393,7 +580,136 @@ mod tests {
 
         let def_stream = m.get_look_config_or_default(None, "stream");
         assert!(def_stream.slide_enabled);
-        assert!(!def_stream.media_enabled); // stream defaults to no background media for key/fill
+        // The broadcast's default look leaves the background media off, so
+        // the stream carries the slide alone.
+        assert!(!def_stream.media_enabled);
+    }
+
+    /// A mirror shows the picture of its source, so the window of a mirror
+    /// reads the source's frame. The chain of mirrors ends at the output
+    /// that holds the picture.
+    #[test]
+    fn a_mirror_shows_the_picture_of_its_source() {
+        let mut routes = HashMap::new();
+        routes.insert(String::from("projector"), OutputContentRoute::LiveSlide);
+        routes.insert(String::from("stage"), OutputContentRoute::Stage);
+        routes.insert(
+            String::from("second_projector"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("projector"),
+            },
+        );
+
+        assert_eq!(
+            OutputContentRoute::source_id("second_projector", &routes),
+            "projector"
+        );
+        // An output that is not a mirror shows its own picture.
+        assert_eq!(
+            OutputContentRoute::source_id("projector", &routes),
+            "projector"
+        );
+
+        // A chain of mirrors ends at the output that holds the picture.
+        routes.insert(
+            String::from("third_projector"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("second_projector"),
+            },
+        );
+        assert_eq!(
+            OutputContentRoute::source_id("third_projector", &routes),
+            "projector"
+        );
+
+        // A cycle of mirrors ends where it started instead of looping.
+        routes.insert(
+            String::from("loop_a"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("loop_b"),
+            },
+        );
+        routes.insert(
+            String::from("loop_b"),
+            OutputContentRoute::Mirror {
+                source_id: String::from("loop_a"),
+            },
+        );
+        assert_eq!(OutputContentRoute::source_id("loop_a", &routes), "loop_a");
+    }
+
+    /// Two projectors are two screens on two displays: every output carries
+    /// a placement of its own.
+    #[test]
+    fn every_output_carries_its_own_placement() {
+        let mut m = OutputManager::with_defaults();
+        let projector = OutputPlacement {
+            display_index: Some(1),
+            screen_x: 120.0,
+            screen_y: -40.0,
+        };
+        m.set_placement("audience", projector);
+        m.set_placement(
+            "stage",
+            OutputPlacement {
+                display_index: Some(2),
+                screen_x: 0.0,
+                screen_y: 0.0,
+            },
+        );
+
+        assert_eq!(m.placement("audience"), Some(projector));
+        assert_eq!(
+            m.placement("stage").and_then(|p| p.display_index),
+            Some(2),
+            "the stage sits on its own display"
+        );
+        assert!(
+            m.placement("audience") != m.placement("stage"),
+            "two screens never share one placement"
+        );
+    }
+
+    /// The placement survives a save and a load, or a restart would put the
+    /// projector back on the wrong screen.
+    #[test]
+    fn the_placement_survives_a_restart() {
+        let mut m = OutputManager::with_defaults();
+        let placement = OutputPlacement {
+            display_index: Some(1),
+            screen_x: 33.5,
+            screen_y: 12.0,
+        };
+        m.set_placement("audience", placement);
+
+        let saved = serde_json::to_string(&m.iter().cloned().collect::<Vec<_>>()).expect("saves");
+        let restored: Vec<NamedOutput> = serde_json::from_str(&saved).expect("loads");
+        let audience = restored
+            .iter()
+            .find(|o| o.id == "audience")
+            .expect("the audience output is there");
+        assert_eq!(audience.placement, placement);
+    }
+
+    /// A configuration written before every output had a placement of its own
+    /// still has to describe where the projector is.
+    #[test]
+    fn an_output_without_a_placement_falls_back_to_the_default_one() {
+        let placement = OutputPlacement {
+            display_index: None,
+            screen_x: 0.0,
+            screen_y: 0.0,
+        };
+        assert!(placement.is_default());
+        assert!(
+            !OutputPlacement {
+                display_index: Some(0),
+                screen_x: 0.0,
+                screen_y: 0.0,
+            }
+            .is_default(),
+            "a display on its own is not the default placement"
+        );
     }
 
     #[test]

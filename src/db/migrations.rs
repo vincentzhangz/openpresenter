@@ -1,7 +1,7 @@
 use crate::Result;
 use rusqlite::{Connection, params};
 
-const LATEST_VERSION: u32 = 3;
+const LATEST_VERSION: u32 = 7;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     conn.execute("PRAGMA foreign_keys = ON", [])?;
@@ -76,8 +76,86 @@ fn run_single(conn: &Connection, version: u32) -> Result<()> {
         1 => migrate_v1(conn),
         2 => migrate_v2(conn),
         3 => migrate_v3(conn),
+        4 => migrate_v4(conn),
+        5 => migrate_v5(conn),
+        6 => migrate_v6(conn),
+        7 => migrate_v7(conn),
         v => Err(anyhow::anyhow!("unknown migration version {v}")),
     }
+}
+
+/// The timeline is the show as a piece of time, and it belongs to the
+/// presentation: a show that is prepared once and used every week keeps its
+/// timings from one week to the next.
+///
+/// The column is the timeline as JSON, so a timeline that grows a field does
+/// not need a column of its own.
+fn migrate_v6(conn: &Connection) -> Result<()> {
+    if !column_exists(conn, "presentations", "timeline")? {
+        conn.execute_batch(
+            "ALTER TABLE presentations ADD COLUMN timeline TEXT NOT NULL DEFAULT '{}'",
+        )?;
+    }
+    Ok(())
+}
+
+/// The service calendar.
+///
+/// The events are the church's week: the services that happen and the
+/// playlist that plays at each one. The event is stored as JSON, so a
+/// service that repeats can carry its pattern without a column of its own.
+fn migrate_v7(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS service_events (
+            id         TEXT PRIMARY KEY,
+            event_data TEXT NOT NULL,
+            starts_at  INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_service_events_starts_at
+            ON service_events(starts_at);",
+    )?;
+    Ok(())
+}
+
+/// The search indexes have to exist, and to know about the rows that are
+/// already there.
+///
+/// The index is an external-content table: a database written before the
+/// index existed has no table for it, and a database written before the
+/// index was filled has an empty one. A search would find nothing — or
+/// fail outright — on a library the operator has been building for years.
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts USING fts5(
+            title, artist,
+            content='songs', content_rowid='rowid'
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS bible_verses_fts USING fts5(
+            text, book,
+            content='bible_verses', content_rowid='rowid'
+        );",
+    )?;
+    // The index is filled from the content it describes, so every row that
+    // is already there is findable.
+    conn.execute("INSERT INTO songs_fts(songs_fts) VALUES('rebuild')", [])?;
+    conn.execute(
+        "INSERT INTO bible_verses_fts(bible_verses_fts) VALUES('rebuild')",
+        [],
+    )?;
+    Ok(())
+}
+
+/// The library records when an asset was last used, so the recently-used
+/// strip survives a restart.
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    if !column_exists(conn, "media", "last_used_at")? {
+        conn.execute(
+            "ALTER TABLE media ADD COLUMN last_used_at INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn migrate_v1(conn: &Connection) -> Result<()> {
@@ -260,5 +338,88 @@ mod tests {
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .expect("schema_version row");
         assert_eq!(v, LATEST_VERSION);
+    }
+
+    /// A library that was built before the search index existed still
+    /// searches.
+    ///
+    /// The index is an external-content table, so a database written before
+    /// it existed has no table for it: every search would fail on a library
+    /// the operator has been building for years.
+    #[test]
+    fn an_old_library_gets_a_working_search() {
+        let conn = fresh();
+        // The database as the first version left it: the tables, but no
+        // search index.
+        migrate_v1(&conn).expect("the first schema");
+        conn.execute("DROP TABLE songs_fts", [])
+            .expect("the index is dropped");
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, created_at, updated_at) \
+             VALUES ('s1', 'Amazing Grace', 'John Newton', 0, 0)",
+            [],
+        )
+        .expect("a song that was saved before the index existed");
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)", [])
+            .expect("the version table");
+        conn.execute("INSERT INTO schema_version (version) VALUES (1)", [])
+            .expect("the version");
+
+        run_migrations(&conn).expect("the migrations");
+
+        let found: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM songs_fts \
+                 JOIN songs s ON songs_fts.rowid = s.rowid \
+                 WHERE songs_fts MATCH '\"Amazing\"*'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("the search runs");
+        assert_eq!(found, 1, "the old song is found by its title");
+    }
+
+    /// The search index is filled again after a song is renamed, so the
+    /// index and the library never disagree.
+    #[test]
+    fn the_search_index_survives_a_rename() {
+        let conn = fresh();
+        run_migrations(&conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, created_at, updated_at) \
+             VALUES ('s1', 'Amazing Grace', 'John Newton', 0, 0)",
+            [],
+        )
+        .expect("the song");
+        conn.execute("INSERT INTO songs_fts(songs_fts) VALUES('rebuild')", [])
+            .expect("the index is filled");
+
+        conn.execute(
+            "INSERT INTO songs_fts(songs_fts, rowid, title, artist) \
+             VALUES('delete', (SELECT rowid FROM songs WHERE id = 's1'), \
+                    'Amazing Grace', 'John Newton')",
+            [],
+        )
+        .expect("the old tokens are removed");
+        conn.execute(
+            "UPDATE songs SET title = 'How Great Thou Art' WHERE id = 's1'",
+            [],
+        )
+        .expect("the rename");
+        conn.execute(
+            "INSERT INTO songs_fts(rowid, title, artist) \
+             SELECT rowid, title, artist FROM songs WHERE id = 's1'",
+            [],
+        )
+        .expect("the new tokens are indexed");
+
+        let old: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM songs_fts WHERE songs_fts MATCH '\"Amazing\"*'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("the old search runs");
+        assert_eq!(old, 0, "the old title is gone from the index");
     }
 }

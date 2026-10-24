@@ -19,7 +19,7 @@ pub enum PropContent {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Prop {
     pub id: String,
     pub name: String,
@@ -146,7 +146,13 @@ pub struct ScreenLookTarget {
     pub props_enabled: bool,
     #[serde(default = "default_true")]
     pub messages_enabled: bool,
-    #[serde(default)]
+    /// Whether the announcement is drawn on this screen.
+    ///
+    /// An announcement is what the app says to the room on its own, so a
+    /// screen that shows the slide can leave it out.
+    #[serde(default = "default_true")]
+    pub announcements_enabled: bool,
+    #[serde(default = "default_true")]
     pub mask_enabled: bool,
     #[serde(default)]
     pub theme_id: Option<String>,
@@ -160,7 +166,8 @@ impl ScreenLookTarget {
             slide_enabled: true,
             props_enabled: true,
             messages_enabled: true,
-            mask_enabled: false,
+            announcements_enabled: true,
+            mask_enabled: true,
             theme_id: None,
         }
     }
@@ -241,6 +248,7 @@ impl Look {
         look.screens = vec![
             ScreenLookTarget::default_for_screen("main"),
             ScreenLookTarget {
+                announcements_enabled: true,
                 screen_id: "stream".to_string(),
                 media_enabled: false,
                 slide_enabled: true,
@@ -250,6 +258,7 @@ impl Look {
                 theme_id: None,
             },
             ScreenLookTarget {
+                announcements_enabled: true,
                 screen_id: "stage".to_string(),
                 media_enabled: false,
                 slide_enabled: true,
@@ -273,6 +282,14 @@ pub struct PropManager {
     pub active_look_id: Option<String>,
     #[serde(default)]
     pub live_message: Option<LiveAlertMessage>,
+    /// The announcement the app is showing.
+    ///
+    /// An announcement is what the app says to the room on its own: the
+    /// service starts in five minutes, the room is being recorded. It is
+    /// separate from the alert, which is the operator's own note, so the two
+    /// can be on the screen at once.
+    #[serde(default)]
+    pub announcement: Option<LiveAlertMessage>,
 }
 
 impl Default for PropManager {
@@ -283,6 +300,7 @@ impl Default for PropManager {
             active_mask: Mask::None,
             active_look_id: None,
             live_message: None,
+            announcement: None,
         }
     }
 }
@@ -292,6 +310,7 @@ impl PropManager {
         let default_look = Look::with_default_screens("Default");
         let active_id = default_look.id.clone();
         Self {
+            announcement: None,
             props: Vec::new(),
             looks: vec![
                 default_look,
@@ -302,18 +321,55 @@ impl PropManager {
             live_message: None,
         }
     }
+    /// Turn a prop on or off.
+    ///
+    /// The live look decides which props are on the output, so the prop
+    /// joins or leaves it: a panel that says "On" while nothing is drawn is
+    /// a lie the operator finds out on the projector.
     pub fn toggle_prop(&mut self, id: &str) {
+        let mut now_visible = false;
         if let Some(prop) = self.props.iter_mut().find(|p| p.id == id) {
             prop.visible = !prop.visible;
+            now_visible = prop.visible;
+        }
+        if let Some(look) = self.active_look_mut() {
+            let present = look.active_prop_ids.iter().any(|prop_id| prop_id == id);
+            if now_visible && !present {
+                look.active_prop_ids.push(id.to_string());
+            } else if !now_visible && present {
+                look.active_prop_ids.retain(|prop_id| prop_id != id);
+            }
         }
     }
 
     pub fn remove_prop(&mut self, id: &str) {
         self.props.retain(|p| p.id != id);
+        // The prop is gone, so it cannot be part of the live look either.
+        if let Some(look) = self.active_look_mut() {
+            look.active_prop_ids.retain(|prop_id| prop_id != id);
+        }
     }
 
+    /// Add a prop to the library.
+    ///
+    /// A new prop is on, so it joins the live look: a lower third that the
+    /// operator created would otherwise not appear on the output.
     pub fn add_prop(&mut self, prop: Prop) {
+        let id = prop.id.clone();
+        let visible = prop.visible;
         self.props.push(prop);
+        if visible
+            && let Some(look) = self.active_look_mut()
+            && !look.active_prop_ids.iter().any(|prop_id| prop_id == &id)
+        {
+            look.active_prop_ids.push(id);
+        }
+    }
+
+    /// The live look, when there is one.
+    fn active_look_mut(&mut self) -> Option<&mut Look> {
+        let active_id = self.active_look_id.clone()?;
+        self.looks.iter_mut().find(|look| look.id == active_id)
     }
 
     pub fn visible_props(&self) -> impl Iterator<Item = &Prop> {
@@ -330,6 +386,14 @@ impl PropManager {
         let mut look = Look::new(name);
         look.mask = self.active_mask.clone();
         look.active_prop_ids = active_ids;
+        // The per-screen configuration belongs to the look. A saved look
+        // that dropped it would turn every layer back on for every screen
+        // when it was applied: the stage monitor would grow lower thirds and
+        // the broadcast would start carrying the mask.
+        if let Some(current) = self.current_look() {
+            look.screens = current.screens.clone();
+            look.theme_id = current.theme_id.clone();
+        }
         self.looks.push(look);
     }
 
@@ -347,11 +411,15 @@ impl PropManager {
         }
     }
 
+    /// The look that is live.
+    ///
+    /// It is the look the output is showing. When there is none, there is
+    /// no live look: falling back to the first one would name a look as
+    /// current that is not on the output.
     pub fn current_look(&self) -> Option<&Look> {
         self.active_look_id
             .as_deref()
             .and_then(|id| self.looks.iter().find(|l| l.id == id))
-            .or_else(|| self.looks.first())
     }
 
     pub fn set_message(&mut self, text: impl Into<String>) {
@@ -363,28 +431,72 @@ impl PropManager {
         }
     }
 
+    /// Show an announcement.
+    pub fn set_announcement(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        if text.trim().is_empty() {
+            self.announcement = None;
+        } else {
+            self.announcement = Some(LiveAlertMessage::new(text));
+        }
+    }
+
+    /// Take the announcement off the screen.
+    pub fn clear_announcement(&mut self) {
+        self.announcement = None;
+    }
+
     pub fn clear_message(&mut self) {
         self.live_message = None;
     }
 
+    /// Remove a look.
+    ///
+    /// Removing the live look takes everything it put on the output with
+    /// it: the mask and the props it showed would otherwise stay on the
+    /// projector while the panel named a different look as current.
     pub fn remove_look(&mut self, id: &str) {
         self.looks.retain(|l| l.id != id);
         if self.active_look_id.as_deref() == Some(id) {
             self.active_look_id = None;
+            self.active_mask = Mask::None;
+            for prop in &mut self.props {
+                prop.visible = false;
+            }
         }
     }
 
     pub fn save_to_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, json)?;
+        // Written atomically: an interrupted write must not leave a truncated
+        // prop library behind.
+        crate::atomic::write_atomic(path, json.as_bytes())?;
         Ok(())
     }
 
+    /// Load the prop library.
+    ///
+    /// An unparseable file is kept as `props.json.bak`: the next save would
+    /// otherwise destroy the library without a word.
     pub fn load_from_file(path: &std::path::Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let Ok(contents) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        match serde_json::from_str(&contents) {
+            Ok(manager) => manager,
+            Err(e) => {
+                let bak = path.with_extension("json.bak");
+                if let Err(rename_error) = std::fs::rename(path, &bak) {
+                    log::warn!(
+                        "could not back up the corrupt prop library to {bak:?}: {rename_error}"
+                    );
+                }
+                log::warn!(
+                    "prop library parse error ({path:?}): {e} — using defaults (original kept as .bak)"
+                );
+                Self::default()
+            }
+        }
     }
 }
 
@@ -520,6 +632,79 @@ mod tests {
         assert!(!pm.props.iter().find(|p| p.id == "logo").unwrap().visible);
     }
 
+    /// A prop the panel shows as "On" is on the output.
+    ///
+    /// The live look decides which props are drawn, so a prop that is
+    /// turned on has to join it: otherwise the operator creates a lower
+    /// third, the panel says "On" and nothing appears on the projector.
+    #[test]
+    fn a_prop_that_is_on_is_drawn() {
+        let mut manager = PropManager::with_default_looks();
+        let prop = Prop {
+            id: "prop-1".to_string(),
+            name: "Lower Third".to_string(),
+            content: PropContent::Rectangle {
+                color: [1.0, 0.0, 0.0, 1.0],
+                corner_radius: 0.0,
+            },
+            x: 0.1,
+            y: 0.8,
+            width: 0.4,
+            height: 0.1,
+            visible: true,
+        };
+        manager.add_prop(prop.clone());
+
+        let overlay = crate::ui::props::overlay_for_screen(&manager, "audience");
+        assert!(
+            overlay.props.iter().any(|p| p.id == "prop-1"),
+            "a new prop is on the output"
+        );
+
+        // Turning it off takes it off the output.
+        manager.toggle_prop("prop-1");
+        let overlay = crate::ui::props::overlay_for_screen(&manager, "audience");
+        assert!(
+            !overlay.props.iter().any(|p| p.id == "prop-1"),
+            "a prop that is off is not on the output"
+        );
+    }
+
+    /// Removing the live look takes everything it put on the output with it.
+    #[test]
+    fn removing_the_live_look_clears_the_output() {
+        let mut manager = PropManager::with_default_looks();
+        let active = manager.active_look_id.clone().expect("a look is live");
+        manager.active_mask = Mask::Letterbox { bar_fraction: 0.1 };
+        let prop = Prop {
+            id: "prop-1".to_string(),
+            name: "Lower Third".to_string(),
+            content: PropContent::Rectangle {
+                color: [1.0, 0.0, 0.0, 1.0],
+                corner_radius: 0.0,
+            },
+            x: 0.1,
+            y: 0.8,
+            width: 0.4,
+            height: 0.1,
+            visible: true,
+        };
+        manager.add_prop(prop);
+
+        manager.remove_look(&active);
+
+        let overlay = crate::ui::props::overlay_for_screen(&manager, "audience");
+        assert!(
+            overlay.props.is_empty(),
+            "the props of the removed look are not on the output"
+        );
+        assert!(
+            matches!(overlay.mask, Mask::None),
+            "the mask of the removed look is not on the output"
+        );
+        assert!(manager.current_look().is_none(), "no look is live any more");
+    }
+
     #[test]
     fn prop_manager_remove_look() {
         let mut pm = PropManager::default();
@@ -603,6 +788,38 @@ mod tests {
         assert!(loaded.props.is_empty());
     }
 
+    /// A saved look keeps the per-screen configuration it was saved from.
+    ///
+    /// The rows of the Looks & Screens matrix belong to the look: a saved
+    /// look that dropped them would turn every layer back on for every
+    /// screen when it was applied.
+    #[test]
+    fn a_saved_look_keeps_its_per_screen_configuration() {
+        let mut manager = PropManager::with_default_looks();
+        let look_id = manager.active_look_id.clone().expect("a look is active");
+        {
+            let look = manager
+                .looks
+                .iter_mut()
+                .find(|look| look.id == look_id)
+                .expect("the look exists");
+            let mut target = look.target_or_default("stream");
+            target.props_enabled = false;
+            target.mask_enabled = false;
+            look.set_screen_target(target);
+        }
+
+        manager.save_look("Broadcast only");
+
+        let saved = manager.looks.last().expect("the look was saved");
+        let target = saved.target_for_screen("stream").expect("the row is there");
+        assert!(
+            !target.props_enabled,
+            "the saved look keeps the screen's own configuration"
+        );
+        assert!(!target.mask_enabled);
+    }
+
     #[test]
     fn screen_look_target_default_and_overrides() {
         let mut target = ScreenLookTarget::default_for_screen("stream");
@@ -623,6 +840,34 @@ mod tests {
         let unconfigured = look.target_or_default("stage");
         assert_eq!(unconfigured.screen_id, "stage");
         assert!(unconfigured.media_enabled);
+    }
+
+    /// The announcement is the app's own word, so it is its own thing: it
+    /// goes up and comes down without touching the operator's alert.
+    #[test]
+    fn the_announcement_is_its_own_message() {
+        let mut manager = PropManager::default();
+        manager.set_announcement("Service starts in 5 minutes");
+        assert!(manager.announcement.is_some());
+        assert!(manager.live_message.is_none());
+
+        manager.set_message("Parent in the foyer");
+        assert!(manager.live_message.is_some());
+        assert!(manager.announcement.is_some());
+
+        manager.clear_announcement();
+        assert!(manager.announcement.is_none());
+        // The operator's alert is still there: taking the announcement away
+        // does not take the alert with it.
+        assert!(manager.live_message.is_some());
+    }
+
+    /// An announcement with no text is no announcement.
+    #[test]
+    fn an_empty_announcement_is_none() {
+        let mut manager = PropManager::default();
+        manager.set_announcement("   ");
+        assert!(manager.announcement.is_none());
     }
 
     #[test]

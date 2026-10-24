@@ -53,14 +53,14 @@ pub const FOURCC_BGRA: u32 = 0x41524742;
 #[cfg(not(feature = "ndi-sdk"))]
 #[allow(non_snake_case)]
 pub unsafe fn NDIlib_initialize() -> bool {
-    eprintln!("NDI stub: initialize called (no-op)");
+    log::info!("NDI stub: initialize called (no-op)");
     true
 }
 
 #[cfg(not(feature = "ndi-sdk"))]
 #[allow(non_snake_case)]
 pub unsafe fn NDIlib_destroy() {
-    eprintln!("NDI stub: destroy called (no-op)");
+    log::info!("NDI stub: destroy called (no-op)");
 }
 
 #[cfg(not(feature = "ndi-sdk"))]
@@ -68,14 +68,14 @@ pub unsafe fn NDIlib_destroy() {
 pub unsafe fn NDIlib_send_create(
     _p_create_settings: *const NDIlib_send_create_t,
 ) -> *mut NDIlib_send_instance_t {
-    eprintln!("NDI stub: send_create called (returning dummy pointer)");
+    log::info!("NDI stub: send_create called (returning dummy pointer)");
     std::ptr::dangling_mut::<NDIlib_send_instance_t>()
 }
 
 #[cfg(not(feature = "ndi-sdk"))]
 #[allow(non_snake_case)]
 pub unsafe fn NDIlib_send_destroy(_p_instance: *mut NDIlib_send_instance_t) {
-    eprintln!("NDI stub: send_destroy called (no-op)");
+    log::info!("NDI stub: send_destroy called (no-op)");
 }
 
 #[cfg(not(feature = "ndi-sdk"))]
@@ -86,9 +86,10 @@ pub unsafe fn NDIlib_send_send_video_v2(
 ) {
     unsafe {
         let frame = &*p_video_data;
-        eprintln!(
+        log::info!(
             "NDI stub: send_video_v2 called ({}x{}, no-op)",
-            frame.xres, frame.yres
+            frame.xres,
+            frame.yres
         );
     }
 }

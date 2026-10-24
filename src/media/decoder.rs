@@ -16,6 +16,28 @@ pub struct RgbaFrame {
     pub pts_secs: f64,
 }
 
+/// Repack a decoded frame into a tightly packed buffer.
+///
+/// The decoder aligns every row to a 32-byte boundary, so the rows of a
+/// frame whose width is not a multiple of eight pixels do not follow one
+/// another: the padding of one row is the start of the next. Everything
+/// downstream reads the frame as a tight buffer, so the rows are copied out
+/// here — a picture that is skewed on the projector is the symptom of
+/// skipping this.
+pub fn pack_rows(data: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
+    let row_bytes = width as usize * 4;
+    let mut packed = Vec::with_capacity(row_bytes * height as usize);
+    for row in 0..height as usize {
+        let start = row * stride;
+        let available = data.len().saturating_sub(start).min(row_bytes);
+        packed.extend_from_slice(&data[start..start + available]);
+        // A frame that is shorter than it claims is padded rather than
+        // truncated: a short row would shift every row after it.
+        packed.resize(packed.len() + (row_bytes - available), 0);
+    }
+    packed
+}
+
 enum DecoderCmd {
     Play,
     Pause,
@@ -30,6 +52,11 @@ pub struct VideoDecoder {
     position_secs: Arc<Mutex<f64>>,
     cmd_tx: Sender<DecoderCmd>,
     is_playing: Arc<AtomicBool>,
+    /// Whether the clip ran to its end.
+    ///
+    /// The decode thread stops at the end of the file, so the transport
+    /// cannot simply start it again: the file has to be opened once more.
+    has_ended: Arc<AtomicBool>,
     /// Fatal errors reported by the decode thread, drained by the UI on tick.
     error: Arc<Mutex<Option<String>>>,
     pub width: u32,
@@ -67,12 +94,14 @@ impl VideoDecoder {
         let current_frame: Arc<Mutex<Option<RgbaFrame>>> = Arc::new(Mutex::new(None));
         let position_secs: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
         let is_playing = Arc::new(AtomicBool::new(false));
+        let has_ended = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = channel::<DecoderCmd>();
 
         let frame_arc = current_frame.clone();
         let pos_arc = position_secs.clone();
         let playing_arc = is_playing.clone();
+        let ended_arc = has_ended.clone();
         let err_arc = error.clone();
         let path_owned = path.to_string();
 
@@ -81,8 +110,14 @@ impl VideoDecoder {
             .spawn(move || {
                 // A decode failure must not be silent: the frame would otherwise
                 // freeze on the output with no indication of what went wrong.
-                if let Err(e) = decode_loop(path_owned, frame_arc, pos_arc, playing_arc, cmd_rx)
-                    && let Ok(mut slot) = err_arc.lock()
+                if let Err(e) = decode_loop(
+                    path_owned,
+                    frame_arc,
+                    pos_arc,
+                    playing_arc,
+                    ended_arc,
+                    cmd_rx,
+                ) && let Ok(mut slot) = err_arc.lock()
                 {
                     *slot = Some(e.to_string());
                 }
@@ -93,6 +128,7 @@ impl VideoDecoder {
             position_secs,
             cmd_tx,
             is_playing,
+            has_ended,
             error,
             width,
             height,
@@ -133,12 +169,32 @@ impl VideoDecoder {
         self.is_playing.load(Ordering::Acquire)
     }
 
+    /// Whether the clip ran to its end.
+    ///
+    /// The decode thread stops at the end of the file, so a finished clip has
+    /// to be opened again before it can play a second time.
+    pub fn has_ended(&self) -> bool {
+        self.has_ended.load(Ordering::Acquire)
+    }
+
     pub fn position_secs(&self) -> f64 {
         self.position_secs.lock().map(|g| *g).unwrap_or(0.0)
     }
 
     pub fn current_frame(&self) -> Option<RgbaFrame> {
         self.current_frame.lock().ok()?.clone()
+    }
+
+    /// The identity of the current frame, without copying its pixels.
+    ///
+    /// The decoded frame is a multi-megabyte buffer, so the compositor asks
+    /// for the identity first and only copies the pixels when the frame
+    /// really changed. A paused video keeps its last frame, and this is how
+    /// the compositor knows that the frame on the output is still the right
+    /// one.
+    pub fn current_frame_identity(&self) -> Option<u64> {
+        let guard = self.current_frame.lock().ok()?;
+        guard.as_ref().map(|frame| frame.pts_secs.to_bits())
     }
 
     pub fn shared_frame_arc(&self) -> Arc<Mutex<Option<RgbaFrame>>> {
@@ -201,9 +257,9 @@ pub fn extract_thumbnail(video_path: &str, seek_secs: f64) -> Option<String> {
         {
             let w = rgba_frame.width();
             let h = rgba_frame.height();
-            let data = rgba_frame.data(0);
+            let data = pack_rows(rgba_frame.data(0), rgba_frame.stride(0), w, h);
 
-            let img = image::RgbaImage::from_raw(w, h, data.to_vec())?;
+            let img = image::RgbaImage::from_raw(w, h, data)?;
 
             let thumb_path = {
                 let src = std::path::Path::new(video_path);
@@ -231,6 +287,9 @@ impl Drop for VideoDecoder {
 enum PauseResult {
     Resumed,
     Stop,
+    /// A seek arrived while the video was paused: the frame at the new
+    /// position is decoded and the video stays paused.
+    Seeked,
 }
 
 fn wait_while_paused(
@@ -250,7 +309,13 @@ fn wait_while_paused(
             Ok(DecoderCmd::Stop) | Err(_) => return PauseResult::Stop,
             Ok(DecoderCmd::SetLoop(l)) => *looping = l,
             Ok(DecoderCmd::SetSpeed(s)) => *speed = s.max(0.1),
-            Ok(DecoderCmd::Seek(secs)) => *seek_to = Some(secs),
+            Ok(DecoderCmd::Seek(secs)) => {
+                *seek_to = Some(secs);
+                // The picture follows the sound: a seek that moves the
+                // soundtrack but leaves the frame where it was is a
+                // transport that lies about where it is.
+                return PauseResult::Seeked;
+            }
             Ok(DecoderCmd::Pause) => {}
         }
     }
@@ -261,6 +326,7 @@ fn decode_loop(
     frame_arc: Arc<Mutex<Option<RgbaFrame>>>,
     position_arc: Arc<Mutex<f64>>,
     playing: Arc<AtomicBool>,
+    ended: Arc<AtomicBool>,
     cmd_rx: Receiver<DecoderCmd>,
 ) -> Result<()> {
     let mut looping = false;
@@ -381,7 +447,12 @@ fn decode_loop(
                     .map(|pts| pts as f64 * time_base_f64)
                     .unwrap_or(0.0);
 
-                let data = rgba_frame.data(0).to_vec();
+                let data = pack_rows(
+                    rgba_frame.data(0),
+                    rgba_frame.stride(0),
+                    rgba_frame.width(),
+                    rgba_frame.height(),
+                );
                 let width = rgba_frame.width();
                 let height = rgba_frame.height();
 
@@ -443,7 +514,10 @@ fn decode_loop(
         if looping || seek_to.is_some() {
             continue 'outer;
         } else {
+            // The clip ran to its end: the transport has to open the file
+            // again to play it a second time.
             playing.store(false, Ordering::Release);
+            ended.store(true, Ordering::Release);
             break 'outer;
         }
     }
@@ -468,5 +542,54 @@ mod tests {
             Some("stream not found".to_string())
         );
         assert_eq!(slot.lock().unwrap().take(), None);
+    }
+
+    /// The rows of a decoded frame are copied out of the decoder's padding.
+    ///
+    /// The decoder aligns every row to a 32-byte boundary, so the rows of a
+    /// frame whose width is not a multiple of eight pixels do not follow one
+    /// another. Reading the frame as a tight buffer would draw it skewed.
+    #[test]
+    fn the_rows_are_packed() {
+        // A three-pixel-wide frame: three pixels are twelve bytes, and the
+        // decoder pads the row to sixteen.
+        const WIDTH: u32 = 3;
+        const HEIGHT: u32 = 2;
+        const STRIDE: usize = 16;
+        let mut padded = Vec::with_capacity(STRIDE * HEIGHT as usize);
+        for row in 0..HEIGHT as usize {
+            for byte in 0..12u8 {
+                padded.push((row as u8) * 10 + byte);
+            }
+            // The padding of this row.
+            padded.extend_from_slice(&[0xFF; STRIDE - 12]);
+        }
+
+        let packed = pack_rows(&padded, STRIDE, WIDTH, HEIGHT);
+        assert_eq!(packed.len(), 12 * HEIGHT as usize, "the frame is tight");
+        assert_eq!(
+            &packed[0..12],
+            &padded[0..12],
+            "the first row keeps its pixels"
+        );
+        assert_eq!(
+            &packed[12..24],
+            &padded[STRIDE..STRIDE + 12],
+            "the second row starts where its own pixels start"
+        );
+        assert!(
+            !packed[12..24].contains(&0xFF),
+            "the padding of the first row is not mistaken for pixels"
+        );
+    }
+
+    /// A frame that is shorter than it claims is padded, not truncated: a
+    /// short row would shift every row after it.
+    #[test]
+    fn a_short_frame_is_padded() {
+        let packed = pack_rows(&[1, 2, 3, 4], 4, 2, 2);
+        assert_eq!(packed.len(), 16, "the frame is the size it claims");
+        assert_eq!(&packed[0..4], &[1, 2, 3, 4]);
+        assert_eq!(&packed[4..8], &[0, 0, 0, 0], "the missing row is padded");
     }
 }

@@ -1,5 +1,7 @@
 use crate::{Result, db::Database};
 
+pub mod log;
+
 pub struct App {
     db: Database,
 }
