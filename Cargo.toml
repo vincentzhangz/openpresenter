@@ -23,22 +23,14 @@ env_logger = "0.11"
 ffmpeg-next = "9"
 futures = "0.3"
 glyphon = "0.12"
-gpui-kit = "0.8"
-iced = { version = "0.14", features = [
-    "tokio",
-    "wgpu",
-    "canvas",
-    "image",
-    "svg",
-    "advanced",
-] }
-iced_font_awesome = "0.4"
+gpui-kit = "0.9"
 image = "0.25"
 log = "0.4"
 lru = "0.19"
 midir = "0.11"
 pollster = "1.0"
-rfd = "0.17"
+quick-xml = "0.42.0"
+rfd = "0.18"
 rodio = { version = "0.23", default-features = false, features = [
     "playback",
     "mp3",
@@ -48,7 +40,7 @@ rodio = { version = "0.23", default-features = false, features = [
     "mp4",
 ] }
 rosc = "0.11"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -57,13 +49,15 @@ toml = "1"
 tower = "0.5"
 uuid = { version = "1.29", features = ["v4", "serde"] }
 wgpu = "30"
-zip = { version = "8", features = ["deflate"] }
+zip = { version = "9", features = ["deflate"] }
 
 [build-dependencies]
 bindgen = "0.73"
 
 [dev-dependencies]
+gpui-kit = { version = "0.9", features = ["test-support"] }
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.bundle]
 name = "OpenPresenter"

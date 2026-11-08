@@ -1,7 +1,4 @@
-pub mod center;
-pub mod edit;
-pub mod left_rail;
-pub mod media_bin;
-pub mod right_dock;
-pub mod show;
-pub mod unified;
+pub mod insert_bar;
+pub mod menu;
+pub mod modals;
+pub mod navbar;

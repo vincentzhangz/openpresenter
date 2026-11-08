@@ -1,41 +1,59 @@
-use crate::ui::messages::Message;
-use crate::ui::theme;
-use iced::{
-    Alignment, Color, Element, Length,
-    widget::{Space, button, row, slider, text},
-};
+//! A single colour-channel slider row and a colour swatch.
 
-/// A single R / G / B / A channel slider row.
-///
-/// Renders a short channel label (14 px wide), a full-width slider, and a
-/// numeric readout (28 px wide). All text uses `size(11)` and [`theme::TEXT_MUTED`].
-pub fn color_channel_slider<'a>(
-    label: &'a str,
+use gpui_kit::component::slider::Slider;
+use gpui_kit::prelude::*;
+use gpui_kit::{Entity, Hsla, IntoElement, SharedString, div, px};
+
+use crate::ui::theme;
+
+/// One R / G / B / A channel: label, slider, and readout.
+pub fn color_channel_slider(
+    label: impl Into<SharedString>,
     value: u8,
-    on_change: impl Fn(u8) -> Message + 'a,
-) -> Element<'a, Message> {
-    row![
-        text(label).size(11).color(theme::TEXT_MUTED).width(14),
-        slider(0.0..=255.0, value as f32, move |v| on_change(v as u8))
-            .step(1.0_f32)
-            .width(Length::Fill),
-        text(format!("{value}"))
-            .size(11)
-            .color(theme::TEXT_MUTED)
-            .width(28),
-    ]
-    .spacing(6)
-    .align_y(Alignment::Center)
-    .into()
+    slider: &Entity<gpui_kit::component::slider::SliderState>,
+) -> impl IntoElement {
+    let label: SharedString = label.into();
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(6.))
+        .child(
+            div()
+                .w(px(14.))
+                .text_size(px(11.))
+                .text_color(theme::c(theme::TEXT_MUTED))
+                .child(label),
+        )
+        .child(Slider::new(slider))
+        .child(
+            div()
+                .w(px(28.))
+                .text_size(px(11.))
+                .text_color(theme::c(theme::TEXT_MUTED))
+                .child(format!("{value}")),
+        )
 }
 
-/// A 28 × 28 clickable colour swatch styled via [`theme::swatch_button`].
-///
-/// Pass `selected: true` to draw the selection indicator around the swatch.
-pub fn color_swatch_btn<'a>(color: Color, selected: bool, msg: Message) -> Element<'a, Message> {
-    button(Space::new().width(28).height(28))
-        .on_press(msg)
-        .padding(0)
-        .style(crate::ui::theme::swatch_button(color, selected))
-        .into()
+/// A clickable colour swatch.
+pub fn color_swatch_btn(
+    id: impl Into<gpui_kit::ElementId>,
+    color: Hsla,
+    selected: bool,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
+) -> impl IntoElement {
+    let border = if selected {
+        theme::c(0xffffff)
+    } else {
+        theme::c(theme::BORDER_PANEL)
+    };
+    div()
+        .id(id)
+        .w(px(28.))
+        .h(px(28.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(border)
+        .bg(color)
+        .on_click(on_click)
 }

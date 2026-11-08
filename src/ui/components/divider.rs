@@ -1,19 +1,11 @@
-use crate::ui::messages::Message;
-use crate::ui::theme;
-use iced::{
-    Background, Element, Length,
-    widget::{Space, container},
-};
+//! A hairline divider.
 
-/// A 1 px horizontal rule styled with [`theme::BORDER_PANEL`].
-///
-/// Drop between sections whenever a visual separation is needed without a full header.
-pub fn divider<'a>() -> Element<'a, Message> {
-    container(Space::new().height(1))
-        .width(Length::Fill)
-        .style(|_: &iced::Theme| iced::widget::container::Style {
-            background: Some(Background::Color(theme::BORDER_PANEL)),
-            ..Default::default()
-        })
-        .into()
+use gpui_kit::prelude::*;
+use gpui_kit::{IntoElement, div, px};
+
+use crate::ui::theme;
+
+/// A horizontal rule.
+pub fn divider() -> impl IntoElement {
+    div().h(px(1.)).w_full().bg(theme::c(theme::BORDER_PANEL))
 }

@@ -1,80 +1,168 @@
-use crate::ui::messages::Message;
+//! A centred modal card on a dimmed overlay.
+
+use gpui_kit::TestSupportExt;
+use gpui_kit::prelude::*;
+use gpui_kit::{AnyElement, IntoElement, MouseButton, SharedString, Window, div, px, relative};
+
 use crate::ui::theme;
-use iced::{
-    Alignment, Element, Length,
-    widget::{Row, Space, button, column, container, text},
-};
 
-/// A centred modal card rendered on a dimmed overlay.
-///
-/// Provide a `title`, arbitrary `content`, and a list of action `buttons`
-/// (typically confirm + cancel). The card and overlay are styled by
-/// [`theme::dialog_card_style`] and [`theme::overlay_style`] respectively.
-pub fn dialog_overlay<'a>(
-    title: &'a str,
-    content: Element<'a, Message>,
-    actions: Vec<Element<'a, Message>>,
-) -> Element<'a, Message> {
-    let action_row = Row::with_children(actions).spacing(10);
-
-    let card = column![
-        text(title).size(18).color(theme::TEXT_PRIMARY),
-        Space::new().height(14),
-        content,
-        Space::new().height(24),
-        action_row,
-    ]
-    .padding(28)
-    .spacing(2)
-    .align_x(Alignment::Start);
-
-    let dialog = container(card).style(theme::dialog_card_style);
-
-    container(dialog)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center(Length::Fill)
-        .style(theme::overlay_style)
-        .into()
+/// Turn a dialog title into an id slug: lowercased, non-alphanumerics
+/// become dashes, with repeats collapsed and ends trimmed.
+fn slugify(title: &str) -> String {
+    let mut slug = String::new();
+    for ch in title.chars() {
+        if ch.is_alphanumeric() {
+            for lower in ch.to_lowercase() {
+                slug.push(lower);
+            }
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        slug.push_str("dialog");
+    }
+    slug
 }
 
-/// Pre-built confirmation dialog with title, message body, and confirm / cancel buttons.
+/// A centered dialog card with a backdrop.
 ///
-/// Set `danger: true` to render the confirm button in destructive red.
-pub fn confirm_dialog<'a>(
-    title: &'a str,
-    message: &'a str,
-    confirm_label: &'a str,
-    on_confirm: Message,
-    on_cancel: Message,
+/// The card is bounded by the screen and its body scrolls, so a dialog
+/// taller than the window keeps its buttons on screen. Clicks inside the
+/// card stop before they reach the backdrop that closes the dialog.
+#[allow(clippy::type_complexity)]
+pub fn dialog_overlay(
+    title: impl Into<SharedString>,
+    content: AnyElement,
+    actions: Vec<AnyElement>,
+    on_backdrop: Option<Box<dyn Fn(&gpui_kit::ClickEvent, &mut Window, &mut gpui_kit::App)>>,
+) -> impl IntoElement {
+    let title: SharedString = title.into();
+    let slug = slugify(&title);
+    let card_id = SharedString::from(format!("dialog-card-{slug}"));
+    let body_id = SharedString::from(format!("dialog-body-{slug}"));
+    let body = div()
+        .id(body_id)
+        .test_support()
+        .flex_1()
+        .min_h_0()
+        .overflow_y_scroll()
+        .child(content);
+    let mut card = div()
+        .id(card_id)
+        .test_support()
+        .flex()
+        .flex_col()
+        .min_w(px(320.))
+        .max_h(relative(0.9))
+        .overflow_hidden()
+        .p(px(20.))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(theme::c(theme::BORDER_STRONG))
+        .bg(theme::c(theme::BG_TOOLBAR))
+        // A click inside the card belongs to the card. The backdrop closes
+        // the dialog on click, and a click inside the card reaches it too
+        // unless the card stops it — an operator pressing a control inside
+        // the panel would have the panel close under their finger.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        })
+        .on_click(|_, _, cx| {
+            cx.stop_propagation();
+        })
+        .child(
+            div()
+                .text_size(px(16.))
+                .text_color(theme::c(theme::TEXT_PRIMARY))
+                .child(title),
+        )
+        .child(div().h(px(12.)))
+        .child(body)
+        .child(div().h(px(16.)));
+
+    if !actions.is_empty() {
+        let mut row = div().flex().flex_row().gap(px(8.)).justify_end();
+        for action in actions {
+            row = row.child(action);
+        }
+        card = card.child(row);
+    }
+
+    let overlay = div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(gpui_kit::hsla(0.0, 0.0, 0.0, 0.6))
+        .child(card);
+
+    let overlay = overlay.id("dialog-backdrop");
+    if let Some(on_backdrop) = on_backdrop {
+        overlay.on_click(on_backdrop)
+    } else {
+        overlay
+    }
+}
+
+/// A confirmation dialog.
+#[allow(clippy::type_complexity)]
+pub fn confirm_dialog(
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    confirm_label: impl Into<SharedString>,
+    on_confirm: std::rc::Rc<dyn Fn(&gpui_kit::ClickEvent, &mut Window, &mut gpui_kit::App)>,
+    on_cancel: std::rc::Rc<dyn Fn(&gpui_kit::ClickEvent, &mut Window, &mut gpui_kit::App)>,
     danger: bool,
-) -> Element<'a, Message> {
-    let content = column![
-        text(message).size(14).color(theme::TEXT_SECONDARY),
-        Space::new().height(6),
-        text("This action cannot be undone.")
-            .size(12)
-            .color(theme::TEXT_MUTED),
-    ]
-    .spacing(2)
-    .into();
+) -> impl IntoElement {
+    use gpui_kit::component::button::{Button, ButtonVariants};
 
-    let actions = vec![
-        button(text(confirm_label).size(13))
-            .on_press(on_confirm)
-            .padding([9, 24])
-            .style(if danger {
-                theme::danger_button
-            } else {
-                theme::primary_button
+    let confirm = if danger {
+        Button::new("dialog-confirm")
+            .label(confirm_label)
+            .danger()
+            .on_click({
+                let on_confirm = on_confirm.clone();
+                move |event: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
+                    on_confirm(event, window, cx);
+                }
             })
-            .into(),
-        button(text("Cancel").size(13))
-            .on_press(on_cancel)
-            .padding([9, 20])
-            .style(theme::secondary_button)
-            .into(),
-    ];
+    } else {
+        Button::new("dialog-confirm")
+            .label(confirm_label)
+            .primary()
+            .on_click({
+                let on_confirm = on_confirm.clone();
+                move |event: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
+                    on_confirm(event, window, cx);
+                }
+            })
+    };
+    let cancel = Button::new("dialog-cancel")
+        .label("Cancel")
+        .secondary()
+        .on_click({
+            let on_cancel = on_cancel.clone();
+            move |event: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
+                on_cancel(event, window, cx);
+            }
+        });
 
-    dialog_overlay(title, content, actions)
+    let message: SharedString = message.into();
+    let content = div()
+        .text_size(px(13.))
+        .text_color(theme::c(theme::TEXT_SECONDARY))
+        .child(message)
+        .into_any_element();
+
+    dialog_overlay(
+        title,
+        content,
+        vec![cancel.into_any_element(), confirm.into_any_element()],
+        None,
+    )
 }

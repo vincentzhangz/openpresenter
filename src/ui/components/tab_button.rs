@@ -1,28 +1,38 @@
-use crate::ui::messages::Message;
-use crate::ui::theme;
-use iced::{
-    Element, Length,
-    widget::{Row, button, container, text},
-};
+//! A tab button and the bar that holds a row of them.
 
-pub fn tab_btn<'a>(label: &'a str, active: bool, on_press: Message) -> Element<'a, Message> {
-    button(text(label).size(11))
-        .on_press(on_press)
-        .width(Length::Fill)
-        .padding([6, 4])
-        .style(if active {
-            theme::primary_button
-        } else {
-            theme::tab_inactive_button
-        })
-        .into()
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::prelude::*;
+use gpui_kit::{AnyElement, IntoElement, SharedString, div, px};
+
+use crate::ui::theme;
+
+/// One tab in a tab bar.
+pub fn tab_btn(
+    id: impl Into<gpui_kit::ElementId>,
+    label: impl Into<SharedString>,
+    active: bool,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
+) -> Button {
+    use gpui_kit::component::Sizable;
+    let mut button = Button::new(id).label(label).xsmall().px(px(4.)).py(px(3.));
+    if active {
+        button = button.primary();
+    } else {
+        button = button.ghost();
+    }
+    button.on_click(on_click)
 }
 
-/// Wraps a row of [`tab_btn`] elements in the standard [`theme::tab_bar_style`] container.
-pub fn tab_bar<'a>(tabs: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    let r = Row::with_children(tabs).spacing(2).width(Length::Fill);
-    container(r)
-        .width(Length::Fill)
-        .style(theme::tab_bar_style)
-        .into()
+/// A row of tabs.
+pub fn tab_bar(tabs: Vec<AnyElement>) -> impl IntoElement {
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .gap(px(1.))
+        .p(px(2.))
+        .bg(theme::c(theme::BG_PANEL));
+    for tab in tabs {
+        row = row.child(tab);
+    }
+    row
 }

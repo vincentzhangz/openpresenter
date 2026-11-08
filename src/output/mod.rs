@@ -409,6 +409,7 @@ pub fn detect_displays() -> Vec<DetectedDisplay> {
 }
 
 #[cfg(any(target_os = "macos", test))]
+#[allow(dead_code)]
 fn parse_resolution_from_display(disp: &serde_json::Value) -> (u32, u32) {
     if let Some(res_str) = disp.get("_spdisplays_resolution").and_then(|v| v.as_str())
         && let Some((w, h)) = parse_w_x_h(res_str)
@@ -424,6 +425,7 @@ fn parse_resolution_from_display(disp: &serde_json::Value) -> (u32, u32) {
 }
 
 #[cfg(any(target_os = "macos", test))]
+#[allow(dead_code)]
 fn parse_w_x_h(s: &str) -> Option<(u32, u32)> {
     let parts: Vec<&str> = s.split('@').next()?.split('x').collect();
     if parts.len() >= 2 {

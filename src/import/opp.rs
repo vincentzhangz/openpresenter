@@ -12,6 +12,15 @@ pub struct OppMeta {
     pub app_version: String,
 }
 
+/// What an export carried.
+#[derive(Debug, Clone)]
+pub struct ExportReport {
+    /// Media files embedded in the package.
+    pub embedded: usize,
+    /// Media paths the package refers to but could not include.
+    pub missing: Vec<String>,
+}
+
 impl OppMeta {
     fn current() -> Self {
         Self {
@@ -22,7 +31,7 @@ impl OppMeta {
     }
 }
 
-pub fn export(presentation: &Presentation, dest_path: &Path) -> Result<usize> {
+pub fn export(presentation: &Presentation, dest_path: &Path) -> Result<ExportReport> {
     let file = std::fs::File::create(dest_path)
         .with_context(|| format!("Cannot create {}", dest_path.display()))?;
 
@@ -40,10 +49,12 @@ pub fn export(presentation: &Presentation, dest_path: &Path) -> Result<usize> {
 
     let media_paths = collect_media_paths(presentation);
     let mut embedded = 0usize;
+    let mut missing = Vec::new();
 
     for path in &media_paths {
         let p = Path::new(path);
         if !p.exists() {
+            missing.push(path.clone());
             continue;
         }
         let filename = p.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
@@ -55,13 +66,14 @@ pub fn export(presentation: &Presentation, dest_path: &Path) -> Result<usize> {
                 embedded += 1;
             }
             Err(e) => {
-                eprintln!("[opp export] skipping {path}: {e}");
+                log::warn!("[opp export] skipping {path}: {e}");
+                missing.push(path.clone());
             }
         }
     }
 
     zip.finish()?;
-    Ok(embedded)
+    Ok(ExportReport { embedded, missing })
 }
 
 pub fn import(src_path: &Path, media_dest_dir: &Path) -> Result<Presentation> {
@@ -84,7 +96,11 @@ pub fn import(src_path: &Path, media_dest_dir: &Path) -> Result<Presentation> {
     let mut extracted_map: std::collections::HashMap<String, PathBuf> =
         std::collections::HashMap::new();
 
-    let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
+    let names: Vec<String> = zip
+        .file_names()
+        .filter_map(Result::ok)
+        .map(|s| s.to_string())
+        .collect();
     for name in &names {
         if !name.starts_with("media/") {
             continue;

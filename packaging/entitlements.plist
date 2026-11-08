@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        The broadcast is the vendor's own library, and it carries the
+        vendor's signature. The hardened runtime checks that a loaded
+        library carries the same team as the process, so a signed app
+        would refuse to load it. Turning the check off is what lets the
+        broadcast work in a signed build.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!--
+        The app draws its own window and reads the operator's media
+        folder, and nothing else.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>

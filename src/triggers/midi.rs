@@ -2,6 +2,27 @@ use crate::domain::Action;
 use midir::{MidiInput, MidiInputConnection};
 use tokio::sync::mpsc::Sender;
 
+/// The Note On keys the remote listens for: (note, description, action).
+///
+/// The triggers panel shows these so the operator knows which key to press;
+/// a mapping that is only in the source is a mapping they have to guess.
+pub const NOTE_KEYS: &[(u8, &str, &str)] = &[
+    (60, "Next slide", "Action::NextSlide"),
+    (59, "Previous slide", "Action::PrevSlide"),
+    (62, "Black screen on", "Action::BlackScreen(true)"),
+    (63, "Black screen off", "Action::BlackScreen(false)"),
+    (64, "Clear output", "Action::ClearOutput"),
+];
+
+/// The Control Change keys the remote listens for:
+/// (control, check, description, action).
+pub const CONTROL_KEYS: &[(u8, &str, &str, &str)] = &[(
+    64,
+    "Sustain pedal down (> 63)",
+    "Next slide",
+    "Action::NextSlide",
+)];
+
 /// Discovered MIDI input device port.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MidiPortInfo {

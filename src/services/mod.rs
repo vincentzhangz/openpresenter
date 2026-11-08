@@ -5,11 +5,17 @@
 //! keeps the domain logic decoupled and maintainable: the UI calls into services
 //! and renders authoritative application state.
 
+mod bible;
+mod calendar;
 mod playlist;
 mod presentation;
+mod song;
 
+pub use bible::BibleService;
+pub use calendar::CalendarService;
 pub use playlist::PlaylistService;
 pub use presentation::PresentationService;
+pub use song::SongService;
 
 use crate::db::Database;
 use std::sync::Arc;
@@ -20,6 +26,9 @@ use std::sync::Arc;
 pub struct Services {
     pub presentations: PresentationService,
     pub playlists: PlaylistService,
+    pub bible: BibleService,
+    pub songs: SongService,
+    pub calendar: CalendarService,
 }
 
 impl Services {
@@ -27,6 +36,9 @@ impl Services {
         Self {
             presentations: PresentationService::new(db.clone()),
             playlists: PlaylistService::new(db.clone()),
+            bible: BibleService::new(db.clone()),
+            songs: SongService::new(db.clone()),
+            calendar: CalendarService::new(db),
         }
     }
 }

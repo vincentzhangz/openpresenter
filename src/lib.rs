@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod app;
 pub(crate) mod atomic;
 pub mod config;

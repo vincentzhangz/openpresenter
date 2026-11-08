@@ -1,10 +1,11 @@
-use crate::ui::messages::Message;
-use iced::{
-    Alignment, Color, Element, Length,
-    widget::{Space, container, row, text},
-};
+//! Group colours.
 
-/// Colour palette used to visually distinguish slide group labels.
+use gpui_kit::prelude::*;
+use gpui_kit::{IntoElement, div, px};
+
+use crate::ui::theme;
+
+/// Colour palette used to distinguish slide group labels.
 pub const GROUP_COLORS: [(u8, u8, u8); 8] = [
     (52, 120, 246),
     (255, 149, 0),
@@ -16,90 +17,51 @@ pub const GROUP_COLORS: [(u8, u8, u8); 8] = [
     (162, 132, 94),
 ];
 
-/// Deterministically maps a group label string to one of the [`GROUP_COLORS`] entries.
-///
-/// The same label always produces the same colour across all panels.
-pub fn group_color(label: &str) -> Color {
-    let hash: usize = label.bytes().fold(0usize, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(b as usize)
-    });
-    let (r, g, b) = GROUP_COLORS[hash % GROUP_COLORS.len()];
-    Color::from_rgb8(r, g, b)
+/// The colour of a group label, chosen deterministically.
+pub fn group_option_color(name: &str) -> gpui_kit::Hsla {
+    let (r, g, b) = {
+        let hash: usize = name.bytes().fold(0usize, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(usize::from(b))
+        });
+        GROUP_COLORS[hash % GROUP_COLORS.len()]
+    };
+    let rgb = (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+    theme::c(rgb)
 }
 
-/// Semantic palette that maps a slide group label to a colour.
-///
-/// Unlike [`group_color`] (which is hash-based), this assigns meaningful colours:
-/// verses are blue, choruses pink, bridges purple, tags red, etc. Used for the
-/// per-slide ribbons/strips and the context-menu group swatches so the same group
-/// always reads with the same colour across the app.
-pub fn group_option_color(label: &str) -> Color {
-    match label {
-        "Verse" => Color::from_rgb8(30, 146, 245),
-        "Verse 1" => Color::from_rgb8(29, 129, 229),
-        "Verse 2" => Color::from_rgb8(24, 114, 214),
-        "Verse 3" => Color::from_rgb8(21, 97, 194),
-        "Verse 4" => Color::from_rgb8(18, 84, 171),
-        "Verse 5" => Color::from_rgb8(17, 74, 152),
-        "Verse 6" => Color::from_rgb8(15, 66, 136),
-        "Chorus" => Color::from_rgb8(222, 20, 109),
-        "Chorus 1" => Color::from_rgb8(205, 18, 99),
-        "Chorus 2" => Color::from_rgb8(186, 16, 90),
-        "Chorus 3" => Color::from_rgb8(167, 15, 82),
-        "Chorus 4" => Color::from_rgb8(148, 14, 74),
-        "Bridge" => Color::from_rgb8(120, 35, 206),
-        "Bridge 1" => Color::from_rgb8(108, 30, 186),
-        "Bridge 2" => Color::from_rgb8(95, 25, 164),
-        "Bridge 3" => Color::from_rgb8(83, 22, 145),
-        "PreChorus" => Color::from_rgb8(203, 40, 156),
-        "Tag" => Color::from_rgb8(214, 56, 45),
-        "Intro" => Color::from_rgb8(185, 182, 44),
-        "Ending" => Color::from_rgb8(164, 163, 39),
-        "Outro" => Color::from_rgb8(144, 143, 35),
-        "Interlude" => Color::from_rgb8(54, 190, 94),
-        "Vamp" => Color::from_rgb8(45, 173, 84),
-        "Turnaround" => Color::from_rgb8(39, 156, 74),
-        "Blank" => Color::from_rgb8(0, 0, 0),
-        _ => Color::from_rgb8(95, 95, 95),
-    }
+/// The colour as 0xRRGGBB.
+pub fn group_option_rgb(name: &str) -> u32 {
+    let (r, g, b) = {
+        let hash: usize = name.bytes().fold(0usize, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(usize::from(b))
+        });
+        GROUP_COLORS[hash % GROUP_COLORS.len()]
+    };
+    (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
 }
 
-/// Renders a coloured dot + uppercase label on a lightly tinted background chip.
-///
-/// Used in slide lists and presenter panels to identify which group a slide belongs to.
-pub fn group_label_widget<'a>(label: &str) -> Element<'a, Message> {
-    let accent = group_color(label);
-    let label_upper = label.to_uppercase();
+/// A coloured dot with the group name.
+pub fn group_color(_name: &str) -> impl IntoElement {
+    div()
+        .w(px(8.))
+        .h(px(8.))
+        .rounded_full()
+        .bg(theme::c(theme::ACCENT_ORANGE))
+}
 
-    let dot = container(Space::new().width(8).height(8)).style(move |_: &iced::Theme| {
-        iced::widget::container::Style {
-            background: Some(iced::Background::Color(accent)),
-            border: iced::Border {
-                radius: 4.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    });
-
-    container(
-        row![
-            dot,
-            Space::new().width(6),
-            text(label_upper).size(10).color(accent)
-        ]
-        .align_y(Alignment::Center)
-        .padding([5, 8]),
-    )
-    .width(Length::Fill)
-    .style(move |_: &iced::Theme| iced::widget::container::Style {
-        background: Some(iced::Background::Color(Color { a: 0.08, ..accent })),
-        border: iced::Border {
-            color: accent,
-            width: 0.0,
-            radius: 4.0.into(),
-        },
-        ..Default::default()
-    })
-    .into()
+/// A row with the group name and its colour dot.
+pub fn group_label_widget(name: &str) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(6.))
+        .child(
+            div()
+                .w(px(8.))
+                .h(px(8.))
+                .rounded_full()
+                .bg(group_option_color(name)),
+        )
+        .child(name.to_string())
 }

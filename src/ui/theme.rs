@@ -1,329 +1,121 @@
-use iced::{
-    Background, Border, Color,
-    widget::{button, container},
-};
+//! Dark charcoal palette, exposed as GPUI colors.
+//!
+//! The iced-era colors are kept as hex constants so every panel reads
+//! the same value; `c()` converts one to a GPUI `Hsla`.
 
-// Dark charcoal palette.
-pub const BG_DARKEST: Color = Color::from_rgb(0.094, 0.094, 0.094); // ~#181818
-pub const BG_DARK: Color = Color::from_rgb(0.118, 0.118, 0.118); // ~#1e1e1e
-pub const BG_PANEL: Color = Color::from_rgb(0.137, 0.137, 0.137); // ~#232323
-pub const BG_TOOLBAR: Color = Color::from_rgb(0.153, 0.153, 0.153); // ~#272727
-pub const BG_HOVER: Color = Color::from_rgb(0.200, 0.200, 0.200);
-pub const BG_ACTIVE: Color = Color::from_rgb(0.235, 0.235, 0.235);
+use gpui_kit::{App, Hsla, rgb};
 
-pub const BORDER_PANEL: Color = Color::from_rgb(0.180, 0.180, 0.180);
-pub const BORDER_STRONG: Color = Color::from_rgb(0.110, 0.110, 0.110); // hairline separators
+/// Darkest background (~#181818).
+pub const BG_DARKEST: u32 = 0x181818;
+/// Dark background (~#1e1e1e).
+pub const BG_DARK: u32 = 0x1e1e1e;
+/// Panel background (~#232323).
+pub const BG_PANEL: u32 = 0x232323;
+/// Toolbar background (~#272727).
+pub const BG_TOOLBAR: u32 = 0x272727;
+/// Hover background (~#333333).
+pub const BG_HOVER: u32 = 0x333333;
+/// Active background (~#3c3c3c).
+pub const BG_ACTIVE: u32 = 0x3c3c3c;
 
-// Primary selection accent (electric orange).
-pub const ACCENT_ORANGE: Color = Color::from_rgb(0.941, 0.216, 0.031); // ~#f03708
-pub const ACCENT_ORANGE_HOVER: Color = Color::from_rgb(1.000, 0.420, 0.200);
-pub const ACCENT_ORANGE_ACTIVE: Color = Color::from_rgb(0.800, 0.180, 0.020);
-// Legacy blue kept for compatibility with existing call sites.
-pub const ACCENT_BLUE: Color = ACCENT_ORANGE;
-pub const ACCENT_BLUE_HOVER: Color = ACCENT_ORANGE_HOVER;
-pub const ACCENT_BLUE_ACTIVE: Color = ACCENT_ORANGE_ACTIVE;
+/// Panel border (~#2e2e2e).
+pub const BORDER_PANEL: u32 = 0x2e2e2e;
+/// Hairline separator (~#1c1c1c).
+pub const BORDER_STRONG: u32 = 0x1c1c1c;
 
-pub const LIVE_GREEN: Color = Color::from_rgb(0.204, 0.780, 0.349);
-pub const DANGER_RED: Color = Color::from_rgb(1.000, 0.271, 0.227);
-pub const WARNING_AMBER: Color = Color::from_rgb(1.000, 0.624, 0.039);
-pub const LINK_YELLOW: Color = Color::from_rgb(1.000, 0.835, 0.000);
+/// Electric orange accent.
+pub const ACCENT_ORANGE: u32 = 0xf03708;
+/// Orange on hover.
+pub const ACCENT_ORANGE_HOVER: u32 = 0xff6b33;
+/// Orange while pressed.
+pub const ACCENT_ORANGE_ACTIVE: u32 = 0xcc2e06;
+/// Legacy blue name, kept for existing call sites.
+pub const ACCENT_BLUE: u32 = 0xf03708;
+/// Legacy blue on hover.
+pub const ACCENT_BLUE_HOVER: u32 = 0xff6b33;
+/// Legacy blue while pressed.
+pub const ACCENT_BLUE_ACTIVE: u32 = 0xcc2e06;
 
-pub const TEXT_PRIMARY: Color = Color::from_rgb(0.886, 0.886, 0.886);
-pub const TEXT_SECONDARY: Color = Color::from_rgb(0.620, 0.620, 0.620);
-pub const TEXT_MUTED: Color = Color::from_rgb(0.420, 0.420, 0.420);
+/// Live indicator green.
+pub const LIVE_GREEN: u32 = 0x34c759;
+/// Danger red.
+pub const DANGER_RED: u32 = 0xff453a;
+/// Warning amber.
+pub const WARNING_AMBER: u32 = 0xff9f0a;
+/// Link yellow.
+pub const LINK_YELLOW: u32 = 0xffd60a;
 
-pub const OVERLAY: Color = Color::from_rgba(0.0, 0.0, 0.0, 0.78);
+/// Primary text.
+pub const TEXT_PRIMARY: u32 = 0xe2e2e2;
+/// Secondary text.
+pub const TEXT_SECONDARY: u32 = 0x9e9e9e;
+/// Muted text.
+pub const TEXT_MUTED: u32 = 0x6b6b6b;
 
-pub const TRANSPARENT: Color = Color::from_rgba(0.0, 0.0, 0.0, 0.0);
+/// Transparent.
+pub const TRANSPARENT: u32 = 0x00000000;
 
-pub fn base_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_DARKEST)),
-        ..Default::default()
+/// Convert a hex color to a GPUI color.
+pub fn c(hex: u32) -> Hsla {
+    if hex == TRANSPARENT {
+        return gpui_kit::transparent_black();
     }
+    // Include an opaque alpha channel.
+    rgb(hex | 0xff00_0000).into()
 }
 
-pub fn panel_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_PANEL)),
-        border: Border {
-            color: BORDER_PANEL,
-            width: 1.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn dark_panel_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_DARK)),
-        border: Border {
-            color: BORDER_PANEL,
-            width: 1.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn toolbar_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_TOOLBAR)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn navbar_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_DARKEST)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn canvas_bg_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color::from_rgb(0.067, 0.067, 0.067))),
-        ..Default::default()
-    }
-}
-
-pub fn slide_thumbnail_style(
-    selected: bool,
-    live: bool,
-) -> impl Fn(&iced::Theme) -> container::Style {
-    move |_theme: &iced::Theme| {
-        let border_color = if live {
-            LIVE_GREEN
-        } else if selected {
-            ACCENT_ORANGE
-        } else {
-            BORDER_PANEL
-        };
-        container::Style {
-            border: Border {
-                color: border_color,
-                width: if selected || live { 2.0 } else { 1.0 },
-                radius: 3.0.into(),
-            },
-            ..Default::default()
-        }
-    }
-}
-
-pub fn tab_bar_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_PANEL)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn overlay_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(OVERLAY)),
-        ..Default::default()
-    }
-}
-
-pub fn dialog_card_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_TOOLBAR)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 1.0,
-            radius: 8.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn drag_handle_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        border: Border {
-            color: Color::from_rgba(1.0, 1.0, 1.0, 0.35),
-            width: 1.0,
-            radius: 2.0.into(),
-        },
-        background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
-        ..Default::default()
-    }
-}
-
-pub fn section_header_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_DARK)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-/// Compact uppercase section title used as a rail header.
-pub fn section_title_style(_theme: &iced::Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(BG_DARKEST)),
-        border: Border {
-            color: BORDER_STRONG,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
-pub fn primary_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let base = button::primary(theme, status);
-    button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => ACCENT_ORANGE_HOVER,
-            button::Status::Pressed => ACCENT_ORANGE_ACTIVE,
-            _ => ACCENT_ORANGE,
-        })),
-        text_color: Color::WHITE,
-        border: Border {
-            radius: 5.0.into(),
-            width: 0.0,
-            color: TRANSPARENT,
-        },
-        ..base
-    }
-}
-
-/// Compact square icon button used in the top toolbar (~30px).
-pub fn toolbar_icon_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let mut s = ghost_button(theme, status);
-    s.border = Border {
-        radius: 4.0.into(),
-        width: 1.0,
-        color: match status {
-            button::Status::Hovered => BORDER_PANEL,
-            _ => TRANSPARENT,
-        },
-    };
-    s
-}
-
-pub fn secondary_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let base = button::secondary(theme, status);
-    button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => BG_ACTIVE,
-            button::Status::Pressed => BG_HOVER,
-            _ => BG_HOVER,
-        })),
-        text_color: TEXT_PRIMARY,
-        border: Border {
-            color: BORDER_STRONG,
-            width: 1.0,
-            radius: 5.0.into(),
-        },
-        ..base
-    }
-}
-
-pub fn danger_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let base = button::danger(theme, status);
-    button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.85, 0.2, 0.15),
-            button::Status::Pressed => Color::from_rgb(0.7, 0.15, 0.1),
-            _ => DANGER_RED,
-        })),
-        text_color: Color::WHITE,
-        border: Border {
-            radius: 5.0.into(),
-            width: 0.0,
-            color: TRANSPARENT,
-        },
-        ..base
-    }
-}
-
-pub fn ghost_button(_theme: &iced::Theme, status: button::Status) -> button::Style {
-    button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => BG_HOVER,
-            button::Status::Pressed => BG_ACTIVE,
-            _ => TRANSPARENT,
-        })),
-        text_color: TEXT_SECONDARY,
-        border: Border {
-            radius: 4.0.into(),
-            width: 0.0,
-            color: TRANSPARENT,
-        },
-        shadow: iced::Shadow::default(),
-        snap: false,
-    }
-}
-
-pub fn tab_active_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    primary_button(theme, status)
-}
-
-pub fn tab_inactive_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    button::Style {
-        background: Some(Background::Color(match status {
-            button::Status::Hovered => BG_ACTIVE,
-            _ => TRANSPARENT,
-        })),
-        text_color: TEXT_SECONDARY,
-        border: Border {
-            radius: 5.0.into(),
-            width: 0.0,
-            color: TRANSPARENT,
-        },
-        ..ghost_button(theme, status)
-    }
-}
-
-pub fn swatch_button(
-    color: Color,
-    selected: bool,
-) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
-    move |_theme: &iced::Theme, status| button::Style {
-        background: Some(Background::Color(color)),
-        border: Border {
-            color: if selected {
-                Color::WHITE
-            } else if matches!(status, button::Status::Hovered) {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.6)
-            } else {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.25)
-            },
-            width: if selected { 2.0 } else { 1.0 },
-            radius: 4.0.into(),
-        },
-        text_color: TRANSPARENT,
-        shadow: iced::Shadow::default(),
-        snap: false,
-    }
-}
-
-pub fn invisible_button(_theme: &iced::Theme, _status: button::Status) -> button::Style {
-    button::Style {
-        background: None,
-        text_color: TRANSPARENT,
-        border: Border::default(),
-        shadow: iced::Shadow::default(),
-        snap: false,
-    }
+/// Install the app theme: Dark mode with the charcoal/orange palette.
+///
+/// Panels read colors via `c()` directly, but gpui-kit controls
+/// (`Button`, `Input`, `Slider`) read the global `Theme` — without this
+/// they paint in the default light theme (the white pills). This sets
+/// the tokens those controls use.
+pub fn install(cx: &mut App) {
+    use gpui_kit::component::{Theme, ThemeMode};
+    Theme::change(ThemeMode::Dark, None, cx);
+    Theme::update(cx, |theme| {
+        theme.background = c(BG_DARKEST);
+        theme.foreground = c(TEXT_PRIMARY);
+        theme.border = c(BORDER_PANEL);
+        theme.accent = c(ACCENT_ORANGE);
+        theme.accent_foreground = c(0xffffff);
+        theme.primary = c(ACCENT_ORANGE);
+        theme.primary_hover = c(ACCENT_ORANGE_HOVER);
+        theme.primary_active = c(ACCENT_ORANGE_ACTIVE);
+        theme.primary_foreground = c(0xffffff);
+        theme.button_primary = c(ACCENT_ORANGE);
+        theme.button_primary_hover = c(ACCENT_ORANGE_HOVER);
+        theme.button_primary_active = c(ACCENT_ORANGE_ACTIVE);
+        theme.button_primary_foreground = c(0xffffff);
+        theme.secondary = c(BG_HOVER);
+        theme.secondary_hover = c(BG_ACTIVE);
+        theme.secondary_active = c(BG_ACTIVE);
+        theme.button_secondary = c(BG_HOVER);
+        theme.button_secondary_hover = c(BG_ACTIVE);
+        theme.button_secondary_foreground = c(TEXT_PRIMARY);
+        theme.button = c(BG_HOVER);
+        theme.button_hover = c(BG_ACTIVE);
+        theme.button_active = c(BG_ACTIVE);
+        theme.button_foreground = c(TEXT_PRIMARY);
+        theme.input = c(BG_PANEL);
+        theme.muted = c(BG_PANEL);
+        theme.popover = c(BG_PANEL);
+        theme.colors.list = c(BG_PANEL);
+        theme.list_hover = c(BG_HOVER);
+        theme.list_active = c(BG_ACTIVE);
+        theme.tab = c(BG_PANEL);
+        theme.tab_active = c(ACCENT_ORANGE);
+        theme.tab_foreground = c(TEXT_SECONDARY);
+        theme.tab_active_foreground = c(0xffffff);
+        theme.tab_bar = c(BG_PANEL);
+        theme.slider_bar = c(ACCENT_ORANGE);
+        theme.slider_thumb = c(0xffffff);
+        theme.success = c(LIVE_GREEN);
+        theme.danger = c(DANGER_RED);
+        theme.warning = c(WARNING_AMBER);
+        theme.link = c(LINK_YELLOW);
+        theme.selection = c(ACCENT_ORANGE).opacity(0.35);
+        theme.sidebar = c(BG_DARK);
+        theme.title_bar = c(BG_TOOLBAR);
+    });
 }

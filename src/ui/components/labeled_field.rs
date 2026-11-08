@@ -1,19 +1,22 @@
-use crate::ui::messages::Message;
-use crate::ui::theme;
-use iced::{
-    Element, Length,
-    widget::{TextInput, column, text},
-};
+//! A labeled field column.
 
-/// Stacked label + text-input column used in settings forms and property panels.
-///
-/// The `input` element is given `Fill` width and `[5, 8]` padding automatically.
-pub fn field_col<'a>(label: &'a str, input: TextInput<'a, Message>) -> Element<'a, Message> {
-    column![
-        text(label).size(11).color(theme::TEXT_MUTED),
-        input.padding([5u16, 8u16]).size(13).width(Length::Fill),
-    ]
-    .spacing(3)
-    .width(Length::Fill)
-    .into()
+use gpui_kit::prelude::*;
+use gpui_kit::{IntoElement, SharedString, div, px};
+
+use crate::ui::theme;
+
+/// A label above a field.
+pub fn field_col(label: impl Into<SharedString>, field: impl IntoElement) -> impl IntoElement {
+    let label: SharedString = label.into();
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(theme::c(theme::TEXT_MUTED))
+                .child(label),
+        )
+        .child(field.into_any_element())
 }

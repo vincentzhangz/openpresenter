@@ -8,6 +8,66 @@ use axum::{
 use serde_json::{Value, json};
 use tokio::sync::{mpsc::Sender, oneshot};
 
+/// One HTTP route the remote control surface serves.
+///
+/// The triggers panel lists these so the operator can configure a controller
+/// from the same list the server serves.
+#[derive(Debug, Clone, Copy)]
+pub struct RouteInfo {
+    pub method: &'static str,
+    pub path: &'static str,
+    pub what: &'static str,
+}
+
+/// The HTTP routes served by [`run_server`].
+pub const ROUTES: &[RouteInfo] = &[
+    RouteInfo {
+        method: "GET",
+        path: "/api/status",
+        what: "Health check",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/slides/next",
+        what: "Next slide",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/slides/prev",
+        what: "Previous slide",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/slides/goto/{index}",
+        what: "Go to slide by index",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/black/{on}",
+        what: "Black screen on/off",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/clear",
+        what: "Clear output",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/timer/start",
+        what: "Start timer",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/timer/stop",
+        what: "Stop timer",
+    },
+    RouteInfo {
+        method: "POST",
+        path: "/api/timer/reset",
+        what: "Reset timer",
+    },
+];
+
 pub async fn run_server(
     port: u16,
     tx: Sender<Action>,

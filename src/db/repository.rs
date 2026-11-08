@@ -731,6 +731,80 @@ impl SongRepository {
         })
     }
 
+    /// Persist a song's metadata only, leaving its verses untouched.
+    pub fn save_song(&self, song: &Song) -> Result<()> {
+        self.db.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            let indexed: Option<(i64, String, Option<String>)> = {
+                let mut stmt =
+                    tx.prepare("SELECT rowid, title, artist FROM songs WHERE id = ?1")?;
+                match stmt.query_row(params![song.id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                }) {
+                    Ok(found) => Some(found),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => None,
+                    Err(e) => return Err(e.into()),
+                }
+            };
+            if let Some((rowid, title, artist)) = indexed {
+                tx.execute(
+                    "INSERT INTO songs_fts(songs_fts, rowid, title, artist) \
+                     VALUES('delete', ?1, ?2, ?3)",
+                    params![rowid, title, artist],
+                )?;
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO songs \
+                 (id, title, artist, copyright, ccli_number, key_signature, bpm, \
+                  created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    song.id,
+                    song.title,
+                    song.artist,
+                    song.copyright,
+                    song.ccli_number,
+                    song.key_signature,
+                    song.bpm.map(|v| v as i64),
+                    song.created_at.timestamp(),
+                    song.updated_at.timestamp(),
+                ],
+            )?;
+            tx.execute(
+                "INSERT INTO songs_fts(rowid, title, artist) \
+                 SELECT rowid, title, artist FROM songs WHERE id = ?1",
+                params![song.id],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
+    /// Replace every verse of a song.
+    pub fn replace_verses(&self, song_id: &str, verses: &[Verse]) -> Result<()> {
+        self.db.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("DELETE FROM verses WHERE song_id = ?1", params![song_id])?;
+            {
+                let mut stmt = tx.prepare(
+                    "INSERT INTO verses (id, song_id, label, content, order_index) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )?;
+                for verse in verses {
+                    stmt.execute(params![
+                        verse.id,
+                        song_id,
+                        verse.label,
+                        verse.content,
+                        verse.order_index as i64,
+                    ])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
     pub fn delete_song(&self, id: &str) -> Result<()> {
         self.db.with_conn(|conn| {
             // The index and the row are changed in one transaction: an index

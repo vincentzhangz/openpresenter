@@ -1,28 +1,26 @@
-use crate::ui::messages::Message;
-use crate::ui::theme;
-use iced::{
-    Alignment, Element,
-    widget::{container, row, text},
-};
+//! A live badge.
 
-/// Small green status badge indicating an active or live state (e.g. "NDI", "LIVE").
-pub fn live_badge<'a>(label: &'a str) -> Element<'a, Message> {
-    container(
-        row![text(label).size(11).color(theme::LIVE_GREEN)]
-            .spacing(4)
-            .align_y(Alignment::Center)
-            .padding([3, 8]),
-    )
-    .style(|_t: &iced::Theme| iced::widget::container::Style {
-        background: Some(iced::Background::Color(iced::Color::from_rgba(
-            0.204, 0.780, 0.349, 0.12,
-        ))),
-        border: iced::Border {
-            color: iced::Color::from_rgba(0.204, 0.780, 0.349, 0.40),
-            width: 1.0,
-            radius: 4.0.into(),
-        },
-        ..Default::default()
-    })
-    .into()
+use gpui_kit::prelude::*;
+use gpui_kit::{IntoElement, div, px};
+
+use crate::ui::theme;
+
+/// A small green dot with a label.
+pub fn live_badge(label: &str, live: bool) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(4.))
+        .child(div().w(px(8.)).h(px(8.)).rounded_full().bg(if live {
+            theme::c(theme::LIVE_GREEN)
+        } else {
+            theme::c(theme::TEXT_MUTED)
+        }))
+        .child(
+            div()
+                .text_size(px(10.))
+                .text_color(theme::c(theme::TEXT_SECONDARY))
+                .child(label.to_string()),
+        )
 }

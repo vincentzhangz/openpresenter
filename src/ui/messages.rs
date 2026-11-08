@@ -1,10 +1,19 @@
+//! Root message vocabulary: one enum the shell dispatches, with a child
+//! message per feature wrapped in a single variant.
+//!
+//! Each feature module owns its own `Message` and exposes an `update`
+//! function; the root `Message` wraps them so a view can reach any
+//! feature with one enum.
+
+use gpui_kit::Point;
+
+/// The root message handled by `MainWindow::handle_message`.
 #[derive(Debug, Clone)]
 pub enum Message {
     Noop,
     EscapePressed,
     /// Fired once after startup: applies persisted settings that have side
-    /// effects (auto-starting the HTTP/OSC remote-control listeners) which
-    /// must run inside the async executor context, not in `MainWindow::new`.
+    /// effects (auto-starting the HTTP/OSC remote-control listeners).
     StartupConfig,
     DismissError,
     SwitchMode(ViewMode),
@@ -39,7 +48,7 @@ pub enum Message {
     PresentingSelectLastSlide,
     PresentingNextSlide,
     PresentingPrevSlide,
-    ShowSlidesCursorMoved(iced::Point),
+    ShowSlidesCursorMoved(Point<f32>),
     ShowSlideContextMenu(usize),
     ShowSlideGroupSubmenu,
     ShowSlideCueSubmenu,
@@ -47,7 +56,7 @@ pub enum Message {
     HideSlideContextMenu,
     ShowRailContextMenu(RailContextTarget),
     HideRailContextMenu,
-    RailCursorMoved(iced::Point),
+    RailCursorMoved(Point<f32>),
     DuplicatePresentation(String),
     EditPresentation(String),
     ExportPresentation(String),
@@ -91,6 +100,7 @@ pub enum Message {
     SendLiveMessage(String),
     DismissLiveMessage,
     LiveMessageInputChanged(String),
+    AnnouncementInputChanged(String),
 
     Ndi(crate::ui::ndi::Message),
 
@@ -113,12 +123,20 @@ pub enum Message {
     Typography(crate::ui::typography::Message),
 
     ToggleShortcutsOverlay,
+    ToggleAbout,
     Undo,
     Redo,
     ToggleReduceMotion,
     Playlist(crate::ui::playlist::Message),
     Songs(crate::ui::songs::Message),
     Bible(crate::ui::bible::Message),
+    Calendar(crate::ui::calendar::Message),
+    CaptureSettings(crate::ui::capture_settings::Message),
+    ClearGroups(crate::ui::clear_groups::Message),
+    CueInspector(crate::ui::cue_inspector::Message),
+    Groups(crate::ui::groups::Message),
+    TestPattern(crate::ui::test_pattern::Message),
+    Timeline(crate::ui::timeline::Message),
 
     VideoFrameTick,
     /// Periodic audio tick (position readout + queue auto-advance).
@@ -130,13 +148,11 @@ pub enum Message {
     ToggleOutputWindow,
     OutputWindowOpened,
     ToggleOutputBlackScreen,
-    WindowClosed(iced::window::Id),
     ToggleOutputSettings,
     OutputScreenXChanged(String),
     OutputScreenYChanged(String),
     OutputAutoFullscreenToggled(bool),
     OutputFullscreenToggled,
-    OutputMonitorSizeFetched(Option<iced::Size>),
 
     Audio(crate::ui::audio::Message),
 
@@ -154,10 +170,127 @@ pub enum Message {
 
     Recording(crate::ui::recording::Message),
     ToggleRecordingPanel,
+
+    // Editor shell commands.
+    Zoom(ZoomCommand),
+    Arrange(ArrangeCommand),
+    Insert(InsertCommand),
+    TextStyle(TextStyleCommand),
+    ToggleRulers,
+    ToggleSlideGuides,
+    ToggleThemeGuides,
+    CanvasBeginTextEdit(usize),
+    CopyObject,
+    PasteObject,
+    DeleteObject,
+    DuplicateObject,
+    NudgeLeft,
+    NudgeRight,
+    NudgeUp,
+    NudgeDown,
+    NudgeLeftFast,
+    NudgeRightFast,
+    NudgeUpFast,
+    NudgeDownFast,
+    OpenSettings,
+    OpenSettingsTab(SettingsTab),
+}
+
+/// How much of the slide the editor shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoomCommand {
+    /// One slide pixel is one screen pixel.
+    ActualSize,
+    /// The slide fits its workspace.
+    FitCanvas,
+    /// The slide fits the canvas.
+    FitSlide,
+    /// A step closer.
+    In,
+    /// A step farther.
+    Out,
+}
+
+/// Where the selected objects sit on the slide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrangeCommand {
+    /// Line the objects up.
+    Align(crate::domain::AlignMode),
+    /// Move through the draw order.
+    Reorder(crate::domain::Reorder),
+    /// Mirror left to right.
+    FlipHorizontal,
+    /// Mirror top to bottom.
+    FlipVertical,
+    /// Stop the objects from moving.
+    Lock,
+    /// Free every object on the slide.
+    UnlockAll,
+}
+
+/// What goes on the slide the operator is editing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertCommand {
+    /// A text object.
+    Text,
+    /// A shape object.
+    Shape,
+    /// A media object waiting for a file.
+    Media,
+    /// A web-page stand-in.
+    Web,
+    /// A countdown stand-in.
+    Timer,
+    /// A playback-marker stand-in.
+    PlaybackMarker,
+    /// A screen-preview stand-in.
+    ScreenPreview,
+    /// A stage-message stand-in.
+    StageMessage,
+    /// A timecode stand-in.
+    Timecode,
+    /// A chord-chart stand-in.
+    ChordChart,
+}
+
+/// A command from the Text menu.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextStyleCommand {
+    /// Copy the text style.
+    CopyStyle,
+    /// Paste a copied style.
+    PasteStyle,
+    /// Apply the style to every slide.
+    ApplyToAllSlides,
+    /// Toggle bold.
+    Bold,
+    /// Toggle italic.
+    Italic,
+    /// Toggle underline.
+    Underline,
+    /// Toggle strikethrough.
+    Strikethrough,
+    /// A step larger.
+    Bigger,
+    /// A step smaller.
+    Smaller,
+    /// More letter spacing.
+    Loosen,
+    /// Less letter spacing.
+    Tighten,
+    /// Reset letter spacing.
+    SpacingDefault,
+    /// Set the casing.
+    Capitalization(crate::domain::TextTransform),
+    /// Set the baseline.
+    Baseline(crate::domain::Baseline),
+    /// Set the ligatures.
+    Ligatures(crate::domain::Ligatures),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SlideViewMode {
+    Easy,
     #[default]
     Grid,
     Table,
@@ -220,10 +353,56 @@ pub enum RailContextTarget {
 pub enum SettingsTab {
     #[default]
     General,
+    Audio,
+    Devices,
+    GroupsAndLabels,
+    Import,
+    Inputs,
+    Network,
     Screens,
-    NetworkNdi,
+    Updates,
+    Media,
+    SlideLabels,
     Transitions,
     Advanced,
+}
+
+impl SettingsTab {
+    /// Every settings page in menu order.
+    pub const ALL: [SettingsTab; 13] = [
+        SettingsTab::General,
+        SettingsTab::Audio,
+        SettingsTab::Devices,
+        SettingsTab::GroupsAndLabels,
+        SettingsTab::Import,
+        SettingsTab::Inputs,
+        SettingsTab::Network,
+        SettingsTab::Screens,
+        SettingsTab::Updates,
+        SettingsTab::Media,
+        SettingsTab::SlideLabels,
+        SettingsTab::Transitions,
+        SettingsTab::Advanced,
+    ];
+
+    /// The name the settings window shows.
+    pub fn label(&self) -> &'static str {
+        match self {
+            SettingsTab::General => "General",
+            SettingsTab::Audio => "Audio",
+            SettingsTab::Devices => "Devices",
+            SettingsTab::GroupsAndLabels => "Groups & Labels",
+            SettingsTab::Import => "Import",
+            SettingsTab::Inputs => "Inputs",
+            SettingsTab::Network => "Network",
+            SettingsTab::Screens => "Screens",
+            SettingsTab::Updates => "Updates",
+            SettingsTab::Media => "Media",
+            SettingsTab::SlideLabels => "Slide Labels",
+            SettingsTab::Transitions => "Transitions",
+            SettingsTab::Advanced => "Advanced",
+        }
+    }
 }
 
 impl From<crate::ui::playlist::Message> for Message {
@@ -325,6 +504,48 @@ impl From<crate::ui::layers::Message> for Message {
 impl From<crate::ui::typography::Message> for Message {
     fn from(msg: crate::ui::typography::Message) -> Self {
         Message::Typography(msg)
+    }
+}
+
+impl From<crate::ui::calendar::Message> for Message {
+    fn from(msg: crate::ui::calendar::Message) -> Self {
+        Message::Calendar(msg)
+    }
+}
+
+impl From<crate::ui::capture_settings::Message> for Message {
+    fn from(msg: crate::ui::capture_settings::Message) -> Self {
+        Message::CaptureSettings(msg)
+    }
+}
+
+impl From<crate::ui::clear_groups::Message> for Message {
+    fn from(msg: crate::ui::clear_groups::Message) -> Self {
+        Message::ClearGroups(msg)
+    }
+}
+
+impl From<crate::ui::cue_inspector::Message> for Message {
+    fn from(msg: crate::ui::cue_inspector::Message) -> Self {
+        Message::CueInspector(msg)
+    }
+}
+
+impl From<crate::ui::groups::Message> for Message {
+    fn from(msg: crate::ui::groups::Message) -> Self {
+        Message::Groups(msg)
+    }
+}
+
+impl From<crate::ui::test_pattern::Message> for Message {
+    fn from(msg: crate::ui::test_pattern::Message) -> Self {
+        Message::TestPattern(msg)
+    }
+}
+
+impl From<crate::ui::timeline::Message> for Message {
+    fn from(msg: crate::ui::timeline::Message) -> Self {
+        Message::Timeline(msg)
     }
 }
 

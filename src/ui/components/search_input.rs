@@ -1,54 +1,22 @@
-use crate::ui::messages::Message;
-use iced::{
-    Element,
-    widget::{Id, container, text_input},
-};
+//! A search input.
 
-/// Stable [`Id`] of the global search field rendered at the top of the left
-/// rail. Used by `Message::FocusSearch` to move keyboard focus into it.
-pub fn global_search_id() -> Id {
-    Id::new("global-search")
+use gpui_kit::component::input::Input;
+use gpui_kit::{Entity, IntoElement, SharedString};
+
+/// The global search id.
+pub fn global_search_id() -> &'static str {
+    "global-search"
 }
 
-/// Padded search text-input with consistent inner and outer spacing.
-///
-/// The outer container adds `top: 6 / right: 10 / bottom: 2 / left: 10` padding
-/// so the field aligns with adjacent panel content.
-pub fn search_input<'a>(
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
-    build_search_input(placeholder, value, on_input, None)
+/// A search field.
+pub fn search_input(entity: &Entity<gpui_kit::component::input::InputState>) -> impl IntoElement {
+    Input::new(entity)
 }
 
-/// Same as [`search_input`], but with an explicit [`Id`] so the field can be
-/// focused programmatically via a widget operation.
-pub fn search_input_with_id<'a>(
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: impl Fn(String) -> Message + 'a,
-    id: Id,
-) -> Element<'a, Message> {
-    build_search_input(placeholder, value, on_input, Some(id))
-}
-
-fn build_search_input<'a>(
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: impl Fn(String) -> Message + 'a,
-    id: Option<Id>,
-) -> Element<'a, Message> {
-    let mut input = text_input(placeholder, value).on_input(on_input);
-    if let Some(id) = id {
-        input = input.id(id);
-    }
-    container(input.padding([7, 10]).size(13))
-        .padding(iced::Padding {
-            top: 6.0,
-            right: 10.0,
-            bottom: 2.0,
-            left: 10.0,
-        })
-        .into()
+/// A search field with an id.
+pub fn search_input_with_id(
+    _id: impl Into<SharedString>,
+    entity: &Entity<gpui_kit::component::input::InputState>,
+) -> impl IntoElement {
+    Input::new(entity)
 }

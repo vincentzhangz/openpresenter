@@ -170,6 +170,11 @@ impl PresentationService {
         self.repo.reorder_slides(presentation_id, &placed)?;
         self.repo.get_presentation(presentation_id)
     }
+
+    /// Create a presentation together with its slides.
+    pub fn create_with_slides(&self, name: &str, slides: &[Slide]) -> Result<Presentation> {
+        self.repo.create_presentation_with_slides(name, slides)
+    }
 }
 
 #[cfg(test)]
